@@ -106,7 +106,7 @@ const Processing = () => {
 			clearTimeout(timer);
 			clearInterval(tipInterval);
 		};
-	}, [navigate, fullBodyPhoto, setComplete]);
+	}, [navigate, fullBodyPhoto, setComplete, setGeneratedModel]);
 
 	const PROCESSING_STEPS = [
 		{ label: "Connecting to AI service", duration: 2000 },
