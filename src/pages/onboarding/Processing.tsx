@@ -70,14 +70,65 @@ const Processing = () => {
 				setProgress(90);
 				toast.success("Avatar generated successfully!");
 
-				// Store the generated model URL (assuming it's returned as a blob/file)
-				const [modelFile, status] = result.data as [File, string];
+				// Debug: Log the result structure
+				console.log("API Result:", result);
+				console.log("Result data:", result.data);
+
+				// Handle different possible response formats from Gradio API
+				let modelFile: File | Blob;
+				let status: string = "completed";
+
+				if (Array.isArray(result.data)) {
+					// Expected format: [File, string]
+					[modelFile, status] = result.data as [File, string];
+				} else if (
+					result.data instanceof File ||
+					result.data instanceof Blob
+				) {
+					// Direct File/Blob response
+					modelFile = result.data;
+				} else if (
+					typeof result.data === "object" &&
+					result.data !== null
+				) {
+					// Object response - try to extract file
+					const data = result.data as any;
+					if (data.file || data.blob || data.model) {
+						modelFile = data.file || data.blob || data.model;
+						status = data.status || status;
+					} else {
+						throw new Error(
+							`Unexpected API response structure: ${JSON.stringify(
+								result.data
+							)}`
+						);
+					}
+				} else {
+					throw new Error(
+						`Unexpected API response type: ${typeof result.data}`
+					);
+				}
+
+				// Validate that we have a proper File/Blob
+				if (
+					!(modelFile instanceof File) &&
+					!(modelFile instanceof Blob)
+				) {
+					throw new Error(
+						`Expected File or Blob, but got ${typeof modelFile}: ${modelFile}`
+					);
+				}
 
 				// Store the generated model in the photo store
+				console.log(
+					"Storing model with blob type:",
+					modelFile.constructor.name,
+					"size:",
+					modelFile.size
+				);
 				setGeneratedModel({
 					blob: modelFile,
-					fileName: `avatar-${Date.now()}.glb`,
-					fileSize: modelFile.size,
+					status: status || "completed",
 				});
 
 				setProgress(100);

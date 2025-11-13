@@ -175,6 +175,10 @@ export const usePhotoStore = create<PhotoStore>()(
 			},
 
 			setGeneratedModel: (modelData) => {
+				console.log("setGeneratedModel called with:", modelData);
+				console.log("blob type:", modelData.blob?.constructor?.name);
+				console.log("blob size:", modelData.blob?.size);
+
 				const id = `generated-model-${Date.now()}`;
 				const url = URL.createObjectURL(modelData.blob);
 				const model: GeneratedModel = {
