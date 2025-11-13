@@ -3,10 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Camera, CheckCircle2, AlertCircle } from "lucide-react";
-import { api, FacePhoto } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-
-type PhotoAngle = "front" | "3/4-left" | "3/4-right" | "profile";
+import { usePhotoStore, type PhotoAngle } from "@/lib/photoStore";
 
 const PHOTO_STEPS: { angle: PhotoAngle; label: string; required: boolean }[] = [
 	{ angle: "front", label: "Front", required: true },
@@ -19,14 +18,19 @@ const FacePhotos = () => {
 	const navigate = useNavigate();
 	const { toast } = useToast();
 	const [currentStep, setCurrentStep] = useState(0);
-	const [photos, setPhotos] = useState<
-		Partial<Record<PhotoAngle, FacePhoto>>
-	>({});
 	const [isCapturing, setIsCapturing] = useState(false);
 	const [stream, setStream] = useState<MediaStream | null>(null);
 	const [cameraError, setCameraError] = useState<string | null>(null);
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const canvasRef = useRef<HTMLCanvasElement>(null);
+
+	// Use Zustand store
+	const {
+		facePhotos,
+		addFacePhoto,
+		getFacePhoto,
+		setCurrentStep: setStoreStep,
+	} = usePhotoStore();
 
 	const currentAngle = PHOTO_STEPS[currentStep];
 
@@ -114,27 +118,23 @@ const FacePhotos = () => {
 				throw new Error("Failed to capture photo");
 			}
 
-			const response = await api.uploadFacePhoto(
-				photoBlob,
-				currentAngle.angle
-			);
+			// Store photo in Zustand store
+			addFacePhoto({
+				angle: currentAngle.angle,
+				blob: photoBlob,
+				quality: "good", // For now, assume good quality
+			});
 
-			if (response.success) {
-				setPhotos((prev) => ({
-					...prev,
-					[currentAngle.angle]: response.data,
-				}));
-				toast({
-					title: "Photo captured",
-					description:
-						response.data.quality === "good"
-							? "Great shot! Moving to next angle."
-							: "Photo captured, but you may want to retake it.",
-				});
+			toast({
+				title: "Photo captured",
+				description: "Great shot! Moving to next angle.",
+			});
 
-				if (currentStep < PHOTO_STEPS.length - 1) {
-					setCurrentStep((prev) => prev + 1);
-				}
+			// Update store step
+			setStoreStep(currentStep);
+
+			if (currentStep < PHOTO_STEPS.length - 1) {
+				setCurrentStep((prev) => prev + 1);
 			}
 		} catch (error) {
 			console.error("Capture error:", error);
@@ -151,7 +151,7 @@ const FacePhotos = () => {
 	const canProceed = () => {
 		const requiredPhotos = PHOTO_STEPS.filter((step) => step.required);
 		return requiredPhotos.every((step) => {
-			const photo = photos[step.angle];
+			const photo = getFacePhoto(step.angle);
 			return photo && photo.quality === "good";
 		});
 	};
@@ -189,7 +189,7 @@ const FacePhotos = () => {
 				{/* Progress */}
 				<div className="flex gap-2 mb-8">
 					{PHOTO_STEPS.map((step, idx) => {
-						const photo = photos[step.angle];
+						const photo = getFacePhoto(step.angle);
 						const isActive = idx === currentStep;
 						const isCompleted = photo && photo.quality === "good";
 
@@ -275,10 +275,10 @@ const FacePhotos = () => {
 				</Card>
 
 				{/* Photo Review Grid */}
-				{Object.keys(photos).length > 0 && (
+				{facePhotos.length > 0 && (
 					<div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
 						{PHOTO_STEPS.map((step) => {
-							const photo = photos[step.angle];
+							const photo = getFacePhoto(step.angle);
 							if (!photo) return null;
 
 							return (
@@ -286,12 +286,12 @@ const FacePhotos = () => {
 									key={step.angle}
 									className="p-4 border-border/50 bg-card/50 backdrop-blur-sm"
 								>
-									<div className="aspect-square bg-muted rounded-lg mb-2 flex items-center justify-center">
-										{photo.quality === "good" ? (
-											<CheckCircle2 className="w-8 h-8 text-primary" />
-										) : (
-											<AlertCircle className="w-8 h-8 text-amber-500" />
-										)}
+									<div className="aspect-square bg-muted rounded-lg mb-2 flex items-center justify-center overflow-hidden">
+										<img
+											src={photo.url}
+											alt={`${step.label} photo`}
+											className="w-full h-full object-cover"
+										/>
 									</div>
 									<p className="text-sm font-medium text-center">
 										{step.label}
