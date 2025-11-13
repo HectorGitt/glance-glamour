@@ -70,65 +70,68 @@ const Processing = () => {
 				setProgress(90);
 				toast.success("Avatar generated successfully!");
 
-				// Debug: Log the result structure
-				console.log("API Result:", result);
-				console.log("Result data:", result.data);
-
 				// Handle different possible response formats from Gradio API
-				let modelFile: File | Blob;
+				let modelBlob: Blob;
 				let status: string = "completed";
+				let fileName: string = "generated-model.glb";
 
 				if (Array.isArray(result.data)) {
-					// Expected format: [File, string]
-					[modelFile, status] = result.data as [File, string];
+					const [fileData, statusMessage] = result.data as [
+						any,
+						string
+					];
+
+					// Check if it's a file metadata object with URL
+					if (typeof fileData === "object" && fileData.url) {
+						// Download the file from the URL
+						const response = await fetch(fileData.url);
+						if (!response.ok) {
+							throw new Error(
+								`Failed to download model: ${response.status} ${response.statusText}`
+							);
+						}
+
+						modelBlob = await response.blob();
+						status = statusMessage || "completed";
+						fileName =
+							fileData.orig_name ||
+							fileData.path?.split("/").pop() ||
+							"generated-model.glb";
+					} else if (
+						fileData instanceof File ||
+						fileData instanceof Blob
+					) {
+						// Direct File/Blob response
+						modelBlob = fileData;
+						status = statusMessage || "completed";
+					} else {
+						throw new Error(
+							`Unexpected file data format: ${typeof fileData}`
+						);
+					}
 				} else if (
 					result.data instanceof File ||
 					result.data instanceof Blob
 				) {
 					// Direct File/Blob response
-					modelFile = result.data;
-				} else if (
-					typeof result.data === "object" &&
-					result.data !== null
-				) {
-					// Object response - try to extract file
-					const data = result.data as any;
-					if (data.file || data.blob || data.model) {
-						modelFile = data.file || data.blob || data.model;
-						status = data.status || status;
-					} else {
-						throw new Error(
-							`Unexpected API response structure: ${JSON.stringify(
-								result.data
-							)}`
-						);
-					}
+					modelBlob = result.data;
 				} else {
 					throw new Error(
 						`Unexpected API response type: ${typeof result.data}`
 					);
 				}
 
-				// Validate that we have a proper File/Blob
-				if (
-					!(modelFile instanceof File) &&
-					!(modelFile instanceof Blob)
-				) {
+				// Validate that we have a proper Blob
+				if (!(modelBlob instanceof Blob)) {
 					throw new Error(
-						`Expected File or Blob, but got ${typeof modelFile}: ${modelFile}`
+						`Expected Blob, but got ${typeof modelBlob}: ${modelBlob}`
 					);
 				}
 
 				// Store the generated model in the photo store
-				console.log(
-					"Storing model with blob type:",
-					modelFile.constructor.name,
-					"size:",
-					modelFile.size
-				);
 				setGeneratedModel({
-					blob: modelFile,
-					status: status || "completed",
+					blob: modelBlob,
+					status: status,
 				});
 
 				setProgress(100);
