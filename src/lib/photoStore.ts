@@ -22,9 +22,17 @@ export interface BodyMeasurements {
 	unit: "cm" | "in";
 }
 
+export interface FullBodyPhoto {
+	id: string;
+	blob: Blob;
+	url: string;
+	timestamp: number;
+}
+
 export interface OnboardingData {
 	facePhotos: FacePhoto[];
 	bodyMeasurements: BodyMeasurements | null;
+	fullBodyPhoto: FullBodyPhoto | null;
 	currentStep: number;
 	isComplete: boolean;
 }
@@ -37,6 +45,13 @@ interface PhotoStore {
 	removeFacePhoto: (id: string) => void;
 	getFacePhoto: (angle: PhotoAngle) => FacePhoto | undefined;
 	clearFacePhotos: () => void;
+
+	// Full body photo
+	fullBodyPhoto: FullBodyPhoto | null;
+	setFullBodyPhoto: (
+		photo: Omit<FullBodyPhoto, "id" | "url" | "timestamp">
+	) => void;
+	clearFullBodyPhoto: () => void;
 
 	// Body measurements
 	bodyMeasurements: BodyMeasurements | null;
@@ -56,6 +71,7 @@ interface PhotoStore {
 
 const initialState = {
 	facePhotos: [],
+	fullBodyPhoto: null,
 	bodyMeasurements: null,
 	currentStep: 0,
 	isComplete: false,
@@ -114,6 +130,33 @@ export const usePhotoStore = create<PhotoStore>()(
 				set({ facePhotos: [] });
 			},
 
+			setFullBodyPhoto: (photoData) => {
+				const id = `full-body-${Date.now()}`;
+				const url = URL.createObjectURL(photoData.blob);
+				const photo: FullBodyPhoto = {
+					...photoData,
+					id,
+					url,
+					timestamp: Date.now(),
+				};
+
+				// Clean up previous full body photo if exists
+				const currentPhoto = get().fullBodyPhoto;
+				if (currentPhoto) {
+					URL.revokeObjectURL(currentPhoto.url);
+				}
+
+				set({ fullBodyPhoto: photo });
+			},
+
+			clearFullBodyPhoto: () => {
+				const currentPhoto = get().fullBodyPhoto;
+				if (currentPhoto) {
+					URL.revokeObjectURL(currentPhoto.url);
+				}
+				set({ fullBodyPhoto: null });
+			},
+
 			setBodyMeasurements: (measurements) => {
 				set({ bodyMeasurements: measurements });
 			},
@@ -135,6 +178,10 @@ export const usePhotoStore = create<PhotoStore>()(
 				get().facePhotos.forEach((photo) => {
 					URL.revokeObjectURL(photo.url);
 				});
+				const fullBodyPhoto = get().fullBodyPhoto;
+				if (fullBodyPhoto) {
+					URL.revokeObjectURL(fullBodyPhoto.url);
+				}
 				set(initialState);
 			},
 
@@ -143,6 +190,7 @@ export const usePhotoStore = create<PhotoStore>()(
 				return {
 					facePhotos: state.facePhotos,
 					bodyMeasurements: state.bodyMeasurements,
+					fullBodyPhoto: state.fullBodyPhoto,
 					currentStep: state.currentStep,
 					isComplete: state.isComplete,
 				};

@@ -3,103 +3,150 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Sparkles } from "lucide-react";
+import { Client } from "@gradio/client";
+import { usePhotoStore } from "@/lib/photoStore";
+import { toast } from "sonner";
 
 const PROCESSING_STEPS = [
-  { label: "Analyzing face structure", duration: 3000 },
-  { label: "Building 3D mesh", duration: 4000 },
-  { label: "Applying body measurements", duration: 3000 },
-  { label: "Finalizing your avatar", duration: 5000 },
+	{ label: "Connecting to AI service", duration: 2000 },
+	{ label: "Uploading your image", duration: 3000 },
+	{ label: "Generating 3D avatar", duration: 8000 },
+	{ label: "Finalizing your avatar", duration: 2000 },
 ];
 
 const TIPS = [
-  "Your studio light, at home.",
-  "Skip the fitting room.",
-  "Five seconds per look. More time for you.",
-  "All your data is encrypted and secure.",
+	"Your studio light, at home.",
+	"Skip the fitting room.",
+	"Five seconds per look. More time for you.",
+	"All your data is encrypted and secure.",
 ];
 
 const Processing = () => {
-  const navigate = useNavigate();
-  const [currentStep, setCurrentStep] = useState(0);
-  const [progress, setProgress] = useState(0);
-  const [currentTip, setCurrentTip] = useState(0);
+	const navigate = useNavigate();
+	const { fullBodyPhoto, setComplete } = usePhotoStore();
+	const [currentStep, setCurrentStep] = useState(0);
+	const [progress, setProgress] = useState(0);
+	const [currentTip, setCurrentTip] = useState(0);
+	const [isProcessing, setIsProcessing] = useState(false);
 
-  useEffect(() => {
-    let stepTimeout: NodeJS.Timeout;
-    let progressInterval: NodeJS.Timeout;
+	useEffect(() => {
+		const processAvatar = async () => {
+			if (!fullBodyPhoto) {
+				toast.error(
+					"No full body photo found. Please upload one first."
+				);
+				navigate("/onboarding/full-body-upload");
+				return;
+			}
 
-    const processSteps = async () => {
-      for (let i = 0; i < PROCESSING_STEPS.length; i++) {
-        setCurrentStep(i);
-        const stepDuration = PROCESSING_STEPS[i].duration;
-        const startProgress = (i / PROCESSING_STEPS.length) * 100;
-        const endProgress = ((i + 1) / PROCESSING_STEPS.length) * 100;
+			setIsProcessing(true);
 
-        let elapsed = 0;
-        progressInterval = setInterval(() => {
-          elapsed += 50;
-          const stepProgress = Math.min((elapsed / stepDuration) * 100, 100);
-          const totalProgress = startProgress + (stepProgress * (endProgress - startProgress)) / 100;
-          setProgress(totalProgress);
-        }, 50);
+			try {
+				// Step 1: Connecting to AI service
+				setCurrentStep(0);
+				setProgress(10);
+				toast.info("Connecting to AI avatar generation service...");
 
-        await new Promise(resolve => {
-          stepTimeout = setTimeout(resolve, stepDuration);
-        });
+				const client = await Client.connect(
+					"https://5f4de998c0f72d24b4.gradio.live/"
+				);
 
-        clearInterval(progressInterval);
-      }
+				// Step 2: Uploading image
+				setCurrentStep(1);
+				setProgress(30);
+				toast.info("Uploading your image...");
 
-      setProgress(100);
-      setTimeout(() => navigate("/onboarding/avatar-preview"), 1000);
-    };
+				// Step 3: Processing image
+				setCurrentStep(2);
+				setProgress(60);
+				toast.info("Generating your 3D avatar...");
 
-    processSteps();
+				const result = await client.predict("/predict", {
+					image_path: fullBodyPhoto.blob,
+				});
 
-    const tipInterval = setInterval(() => {
-      setCurrentTip(prev => (prev + 1) % TIPS.length);
-    }, 3000);
+				// Step 4: Finalizing
+				setCurrentStep(3);
+				setProgress(90);
+				toast.success("Avatar generated successfully!");
 
-    return () => {
-      clearTimeout(stepTimeout);
-      clearInterval(progressInterval);
-      clearInterval(tipInterval);
-    };
-  }, [navigate]);
+				// Store the generated model URL (assuming it's returned as a blob/file)
+				const [modelFile, status] = result.data as [File, string];
 
-  return (
-    <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-6">
-      <Card className="max-w-2xl w-full p-12 border-border/50 bg-card/95 backdrop-blur-sm shadow-premium">
-        <div className="text-center space-y-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/10 mb-4 animate-pulse">
-            <Sparkles className="w-10 h-10 text-primary" />
-          </div>
+				// For now, we'll just complete the process
+				// In a real implementation, you'd store the model file
+				console.log("Generated model:", modelFile);
+				console.log("Status:", status);
 
-          <div>
-            <h1 className="text-3xl font-bold mb-4 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-              Creating Your Avatar
-            </h1>
-            <p className="text-muted-foreground text-lg">
-              {PROCESSING_STEPS[currentStep]?.label || "Finalizing..."}
-            </p>
-          </div>
+				setProgress(100);
+				setComplete(true);
 
-          <div className="space-y-3">
-            <Progress value={progress} className="h-2" />
-            <p className="text-sm text-muted-foreground">
-              {Math.round(progress)}% complete
-            </p>
-          </div>
+				setTimeout(() => navigate("/onboarding/avatar-preview"), 1000);
+			} catch (error) {
+				console.error("Avatar generation failed:", error);
+				toast.error("Failed to generate avatar. Please try again.");
+				navigate("/onboarding/full-body-upload");
+			} finally {
+				setIsProcessing(false);
+			}
+		};
 
-          <div className="pt-8 border-t border-border/50">
-            <p className="text-sm text-muted-foreground italic animate-fade-in">
-              {TIPS[currentTip]}
-            </p>
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
+		// Start processing after a short delay
+		const timer = setTimeout(() => {
+			processAvatar();
+		}, 1000);
+
+		const tipInterval = setInterval(() => {
+			setCurrentTip((prev) => (prev + 1) % TIPS.length);
+		}, 3000);
+
+		return () => {
+			clearTimeout(timer);
+			clearInterval(tipInterval);
+		};
+	}, [navigate, fullBodyPhoto, setComplete]);
+
+	const PROCESSING_STEPS = [
+		{ label: "Connecting to AI service", duration: 2000 },
+		{ label: "Uploading your image", duration: 3000 },
+		{ label: "Generating 3D avatar", duration: 8000 },
+		{ label: "Finalizing your avatar", duration: 2000 },
+	];
+
+	return (
+		<div className="min-h-screen bg-gradient-hero flex items-center justify-center p-6">
+			<Card className="max-w-2xl w-full p-12 border-border/50 bg-card/95 backdrop-blur-sm shadow-premium">
+				<div className="text-center space-y-8">
+					<div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/10 mb-4 animate-pulse">
+						<Sparkles className="w-10 h-10 text-primary" />
+					</div>
+
+					<div>
+						<h1 className="text-3xl font-bold mb-4 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+							Creating Your Avatar
+						</h1>
+						<p className="text-muted-foreground text-lg">
+							{PROCESSING_STEPS[currentStep]?.label ||
+								"Finalizing..."}
+						</p>
+					</div>
+
+					<div className="space-y-3">
+						<Progress value={progress} className="h-2" />
+						<p className="text-sm text-muted-foreground">
+							{Math.round(progress)}% complete
+						</p>
+					</div>
+
+					<div className="pt-8 border-t border-border/50">
+						<p className="text-sm text-muted-foreground italic animate-fade-in">
+							{TIPS[currentTip]}
+						</p>
+					</div>
+				</div>
+			</Card>
+		</div>
+	);
 };
 
 export default Processing;

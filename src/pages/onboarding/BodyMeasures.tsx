@@ -98,7 +98,7 @@ const BodyMeasures = () => {
 			// Optional: Still call API if needed for backend processing
 			await api.submitMeasures(measurementsData);
 
-			navigate("/onboarding/processing");
+			navigate("/onboarding/full-body-upload");
 		} catch (error) {
 			toast({
 				title: "Submission failed",

@@ -9,6 +9,7 @@ import Consent from "./pages/onboarding/Consent";
 import FacePhotos from "./pages/onboarding/FacePhotos";
 import ReviewPhotos from "./pages/onboarding/ReviewPhotos";
 import BodyMeasures from "./pages/onboarding/BodyMeasures";
+import FullBodyUpload from "./pages/onboarding/FullBodyUpload";
 import Processing from "./pages/onboarding/Processing";
 import AvatarPreview from "./pages/onboarding/AvatarPreview";
 import SignIn from "./pages/SignIn";
@@ -20,29 +21,48 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Welcome />} />
-          <Route path="/signin" element={<SignIn />} />
-          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-          <Route path="/data-controls" element={<DataControls />} />
-          <Route path="/onboarding/consent" element={<Consent />} />
-          <Route path="/onboarding/face-photos" element={<FacePhotos />} />
-          <Route path="/onboarding/review-photos" element={<ReviewPhotos />} />
-          <Route path="/onboarding/body-measures" element={<BodyMeasures />} />
-          <Route path="/onboarding/processing" element={<Processing />} />
-          <Route path="/onboarding/avatar-preview" element={<AvatarPreview />} />
-          <Route path="/tryon" element={<TryOn />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+	<QueryClientProvider client={queryClient}>
+		<TooltipProvider>
+			<Toaster />
+			<Sonner />
+			<BrowserRouter>
+				<Routes>
+					<Route path="/" element={<Welcome />} />
+					<Route path="/signin" element={<SignIn />} />
+					<Route path="/privacy-policy" element={<PrivacyPolicy />} />
+					<Route path="/data-controls" element={<DataControls />} />
+					<Route path="/onboarding/consent" element={<Consent />} />
+					<Route
+						path="/onboarding/face-photos"
+						element={<FacePhotos />}
+					/>
+					<Route
+						path="/onboarding/review-photos"
+						element={<ReviewPhotos />}
+					/>
+					<Route
+						path="/onboarding/body-measures"
+						element={<BodyMeasures />}
+					/>
+					<Route
+						path="/onboarding/full-body-upload"
+						element={<FullBodyUpload />}
+					/>
+					<Route
+						path="/onboarding/processing"
+						element={<Processing />}
+					/>
+					<Route
+						path="/onboarding/avatar-preview"
+						element={<AvatarPreview />}
+					/>
+					<Route path="/tryon" element={<TryOn />} />
+					{/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+					<Route path="*" element={<NotFound />} />
+				</Routes>
+			</BrowserRouter>
+		</TooltipProvider>
+	</QueryClientProvider>
 );
 
 export default App;
