@@ -48,7 +48,7 @@ const Processing = () => {
 				toast.info("Connecting to AI avatar generation service...");
 
 				const client = await Client.connect(
-					"https://7173a16898e9ae636f.gradio.live/"
+					"https://5e469a20d7b847bfe1.gradio.live/"
 				);
 
 				// Step 2: Uploading image
