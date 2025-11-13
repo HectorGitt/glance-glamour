@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,7 +13,8 @@ import { usePhotoStore } from "@/lib/photoStore";
 const BodyMeasures = () => {
 	const navigate = useNavigate();
 	const { toast } = useToast();
-	const { setBodyMeasurements } = usePhotoStore();
+	const { setBodyMeasurements, bodyMeasurements: savedMeasurements } =
+		usePhotoStore();
 	const [unit, setUnit] = useState<"cm" | "in">("cm");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [measures, setMeasures] = useState({
@@ -24,6 +25,21 @@ const BodyMeasures = () => {
 		shoulder: "",
 		inseam: "",
 	});
+
+	// Load saved measurements on component mount
+	useEffect(() => {
+		if (savedMeasurements) {
+			setMeasures({
+				height: savedMeasurements.height.toString(),
+				chest: savedMeasurements.chest.toString(),
+				waist: savedMeasurements.waist.toString(),
+				hip: savedMeasurements.hip.toString(),
+				shoulder: savedMeasurements.shoulder.toString(),
+				inseam: savedMeasurements.inseam.toString(),
+			});
+			setUnit(savedMeasurements.unit);
+		}
+	}, [savedMeasurements]);
 
 	const handleInputChange = (field: string, value: string) => {
 		setMeasures((prev) => ({ ...prev, [field]: value }));
