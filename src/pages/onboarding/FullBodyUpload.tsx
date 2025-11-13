@@ -8,7 +8,7 @@ import { Upload, User, CheckCircle } from "lucide-react";
 import { usePhotoStore } from "@/lib/photoStore";
 import { toast } from "sonner";
 
-export const FullBodyUpload = () => {
+const FullBodyUpload = () => {
 	const navigate = useNavigate();
 	const { fullBodyPhoto, setFullBodyPhoto } = usePhotoStore();
 	const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -222,3 +222,5 @@ export const FullBodyUpload = () => {
 		</div>
 	);
 };
+
+export default FullBodyUpload;
