@@ -14,13 +14,19 @@ const PHOTO_STEPS = [
 
 const ReviewPhotos = () => {
 	const navigate = useNavigate();
-	const { facePhotos, getFacePhoto } = usePhotoStore();
+	const { facePhotos, getFacePhoto, getFacePhotoMetadata } = usePhotoStore();
 
 	const canProceed = () => {
 		const requiredPhotos = PHOTO_STEPS.filter((step) => step.required);
 		return requiredPhotos.every((step) => {
 			const photo = getFacePhoto(step.angle);
-			return photo && photo.quality === "good";
+			const metadata = getFacePhotoMetadata(step.angle);
+
+			// Allow proceeding if photo exists and is good, or if metadata shows it was previously good
+			return (
+				(photo && photo.quality === "good") ||
+				(metadata?.captured && metadata.quality === "good")
+			);
 		});
 	};
 
@@ -39,6 +45,7 @@ const ReviewPhotos = () => {
 				<div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
 					{PHOTO_STEPS.map((step) => {
 						const photo = getFacePhoto(step.angle);
+						const metadata = getFacePhotoMetadata(step.angle);
 
 						return (
 							<Card
@@ -56,7 +63,9 @@ const ReviewPhotos = () => {
 										<div className="text-center">
 											<AlertCircle className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
 											<p className="text-xs text-muted-foreground">
-												Not captured
+												{metadata?.captured
+													? "Captured (refresh to reload)"
+													: "Not captured"}
 											</p>
 										</div>
 									)}
@@ -68,13 +77,17 @@ const ReviewPhotos = () => {
 									className={`text-xs text-center mb-3 ${
 										photo?.quality === "good"
 											? "text-primary"
-											: "text-amber-500"
+											: metadata?.captured
+											? "text-amber-500"
+											: "text-muted-foreground"
 									}`}
 								>
 									{photo
 										? photo.quality === "good"
 											? "Good quality"
 											: "Retake recommended"
+										: metadata?.captured
+										? "Previously captured"
 										: "Missing"}
 								</p>
 								{(!photo || photo.quality === "retake") && (
@@ -87,7 +100,9 @@ const ReviewPhotos = () => {
 										}
 									>
 										<RotateCcw className="w-3 h-3 mr-1" />
-										{photo ? "Retake" : "Capture"}
+										{photo || metadata?.captured
+											? "Recapture"
+											: "Capture"}
 									</Button>
 								)}
 							</Card>
@@ -99,7 +114,9 @@ const ReviewPhotos = () => {
 					<Card className="p-4 mb-8 border-amber-500/20 bg-amber-500/5">
 						<p className="text-sm text-center text-amber-600 dark:text-amber-400">
 							Please ensure at least 3 photos are marked as good
-							quality to proceed.
+							quality to proceed. If photos were previously
+							captured, you may need to recapture them after
+							refreshing the page.
 						</p>
 					</Card>
 				)}

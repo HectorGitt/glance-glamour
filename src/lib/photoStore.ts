@@ -12,6 +12,13 @@ export interface FacePhoto {
 	timestamp: number;
 }
 
+export interface FacePhotoMetadata {
+	angle: PhotoAngle;
+	quality: "good" | "retake";
+	timestamp: number;
+	captured: boolean;
+}
+
 export interface BodyMeasurements {
 	height: number;
 	chest: number;
@@ -49,10 +56,12 @@ export interface OnboardingData {
 interface PhotoStore {
 	// Face photos
 	facePhotos: FacePhoto[];
+	facePhotoMetadata: FacePhotoMetadata[];
 	addFacePhoto: (photo: Omit<FacePhoto, "id" | "url" | "timestamp">) => void;
 	updateFacePhoto: (id: string, updates: Partial<FacePhoto>) => void;
 	removeFacePhoto: (id: string) => void;
 	getFacePhoto: (angle: PhotoAngle) => FacePhoto | undefined;
+	getFacePhotoMetadata: (angle: PhotoAngle) => FacePhotoMetadata | undefined;
 	clearFacePhotos: () => void;
 
 	// Full body photo
@@ -87,6 +96,7 @@ interface PhotoStore {
 
 const initialState = {
 	facePhotos: [],
+	facePhotoMetadata: [],
 	fullBodyPhoto: null,
 	generatedModel: null,
 	bodyMeasurements: null,
@@ -109,12 +119,26 @@ export const usePhotoStore = create<PhotoStore>()(
 					timestamp: Date.now(),
 				};
 
+				// Store metadata for persistence
+				const metadata: FacePhotoMetadata = {
+					angle: photoData.angle,
+					quality: photoData.quality,
+					timestamp: Date.now(),
+					captured: true,
+				};
+
 				set((state) => ({
 					facePhotos: [
 						...state.facePhotos.filter(
 							(p) => p.angle !== photoData.angle
 						),
 						photo,
+					],
+					facePhotoMetadata: [
+						...state.facePhotoMetadata.filter(
+							(m) => m.angle !== photoData.angle
+						),
+						metadata,
 					],
 				}));
 			},
@@ -139,12 +163,18 @@ export const usePhotoStore = create<PhotoStore>()(
 				return get().facePhotos.find((photo) => photo.angle === angle);
 			},
 
+			getFacePhotoMetadata: (angle) => {
+				return get().facePhotoMetadata.find(
+					(meta) => meta.angle === angle
+				);
+			},
+
 			clearFacePhotos: () => {
 				// Clean up blob URLs
 				get().facePhotos.forEach((photo) => {
 					URL.revokeObjectURL(photo.url);
 				});
-				set({ facePhotos: [] });
+				set({ facePhotos: [], facePhotoMetadata: [] });
 			},
 
 			setFullBodyPhoto: (photoData) => {
@@ -249,6 +279,7 @@ export const usePhotoStore = create<PhotoStore>()(
 			// Only persist certain data, not blob URLs (they're recreated)
 			partialize: (state) => ({
 				bodyMeasurements: state.bodyMeasurements,
+				facePhotoMetadata: state.facePhotoMetadata,
 				currentStep: state.currentStep,
 				isComplete: state.isComplete,
 				// Note: facePhotos with blob URLs are not persisted
