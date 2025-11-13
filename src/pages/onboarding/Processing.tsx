@@ -23,7 +23,7 @@ const TIPS = [
 
 const Processing = () => {
 	const navigate = useNavigate();
-	const { fullBodyPhoto, setComplete } = usePhotoStore();
+	const { fullBodyPhoto, setComplete, setGeneratedModel } = usePhotoStore();
 	const [currentStep, setCurrentStep] = useState(0);
 	const [progress, setProgress] = useState(0);
 	const [currentTip, setCurrentTip] = useState(0);
@@ -73,10 +73,12 @@ const Processing = () => {
 				// Store the generated model URL (assuming it's returned as a blob/file)
 				const [modelFile, status] = result.data as [File, string];
 
-				// For now, we'll just complete the process
-				// In a real implementation, you'd store the model file
-				console.log("Generated model:", modelFile);
-				console.log("Status:", status);
+				// Store the generated model in the photo store
+				setGeneratedModel({
+					blob: modelFile,
+					fileName: `avatar-${Date.now()}.glb`,
+					fileSize: modelFile.size,
+				});
 
 				setProgress(100);
 				setComplete(true);
