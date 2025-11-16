@@ -4,15 +4,27 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, User, CheckCircle } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Upload, User, CheckCircle, Settings, ChevronDown } from "lucide-react";
 import { usePhotoStore } from "@/lib/photoStore";
 import { toast } from "sonner";
 
 const FullBodyUpload = () => {
 	const navigate = useNavigate();
-	const { fullBodyPhoto, setFullBodyPhoto } = usePhotoStore();
+	const {
+		fullBodyPhoto,
+		setFullBodyPhoto,
+		advancedSettings,
+		setAdvancedSettings,
+	} = usePhotoStore();
 	const [selectedFile, setSelectedFile] = useState<File | null>(null);
 	const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+	const [showAdvanced, setShowAdvanced] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -196,6 +208,193 @@ const FullBodyUpload = () => {
 							</>
 						)}
 					</div>
+				</Card>
+
+				{/* Advanced Settings */}
+				<Card className="p-6 border-border/50 bg-card/50 backdrop-blur-sm shadow-elegant">
+					<Collapsible
+						open={showAdvanced}
+						onOpenChange={setShowAdvanced}
+					>
+						<CollapsibleTrigger asChild>
+							<Button
+								variant="outline"
+								className="w-full justify-between"
+							>
+								<div className="flex items-center gap-2">
+									<Settings className="w-4 h-4" />
+									Advanced Settings
+								</div>
+								<ChevronDown
+									className={`w-4 h-4 transition-transform ${
+										showAdvanced ? "rotate-180" : ""
+									}`}
+								/>
+							</Button>
+						</CollapsibleTrigger>
+						<CollapsibleContent className="space-y-4 mt-4">
+							<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<div className="flex items-center space-x-2">
+									<Checkbox
+										id="show-mesh-stats"
+										checked={advancedSettings.showMeshStats}
+										onCheckedChange={(checked) =>
+											setAdvancedSettings({
+												showMeshStats:
+													checked as boolean,
+											})
+										}
+									/>
+									<Label htmlFor="show-mesh-stats">
+										Show Mesh Statistics
+									</Label>
+								</div>
+
+								<div className="flex items-center space-x-2">
+									<Checkbox
+										id="remove-background"
+										checked={
+											advancedSettings.removeBackground
+										}
+										onCheckedChange={(checked) =>
+											setAdvancedSettings({
+												removeBackground:
+													checked as boolean,
+											})
+										}
+									/>
+									<Label htmlFor="remove-background">
+										Remove Background
+									</Label>
+								</div>
+
+								<div className="flex items-center space-x-2">
+									<Checkbox
+										id="randomize-seed"
+										checked={advancedSettings.randomizeSeed}
+										onCheckedChange={(checked) =>
+											setAdvancedSettings({
+												randomizeSeed:
+													checked as boolean,
+											})
+										}
+									/>
+									<Label htmlFor="randomize-seed">
+										Randomize Seed
+									</Label>
+								</div>
+							</div>
+
+							<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<div className="space-y-2">
+									<Label htmlFor="seed">Seed</Label>
+									<Input
+										id="seed"
+										type="number"
+										value={advancedSettings.seed}
+										onChange={(e) =>
+											setAdvancedSettings({
+												seed:
+													parseInt(e.target.value) ||
+													0,
+											})
+										}
+										disabled={
+											advancedSettings.randomizeSeed
+										}
+										min="0"
+										max="99999999"
+									/>
+								</div>
+
+								<div className="space-y-2">
+									<Label htmlFor="inference-steps">
+										Inference Steps
+									</Label>
+									<Input
+										id="inference-steps"
+										type="number"
+										value={advancedSettings.inferenceSteps}
+										onChange={(e) =>
+											setAdvancedSettings({
+												inferenceSteps:
+													parseInt(e.target.value) ||
+													1,
+											})
+										}
+										min="1"
+										max="100"
+									/>
+								</div>
+
+								<div className="space-y-2">
+									<Label htmlFor="octree-resolution">
+										Octree Resolution
+									</Label>
+									<Input
+										id="octree-resolution"
+										type="number"
+										value={
+											advancedSettings.octreeResolution
+										}
+										onChange={(e) =>
+											setAdvancedSettings({
+												octreeResolution:
+													parseInt(e.target.value) ||
+													64,
+											})
+										}
+										min="64"
+										max="1024"
+										step="64"
+									/>
+								</div>
+
+								<div className="space-y-2">
+									<Label htmlFor="guidance-scale">
+										Guidance Scale
+									</Label>
+									<Input
+										id="guidance-scale"
+										type="number"
+										value={advancedSettings.guidanceScale}
+										onChange={(e) =>
+											setAdvancedSettings({
+												guidanceScale:
+													parseFloat(
+														e.target.value
+													) || 1,
+											})
+										}
+										min="1"
+										max="20"
+										step="0.1"
+									/>
+								</div>
+
+								<div className="space-y-2 md:col-span-2">
+									<Label htmlFor="num-chunks">
+										Number of Chunks
+									</Label>
+									<Input
+										id="num-chunks"
+										type="number"
+										value={advancedSettings.numChunks}
+										onChange={(e) =>
+											setAdvancedSettings({
+												numChunks:
+													parseInt(e.target.value) ||
+													1000,
+											})
+										}
+										min="1000"
+										max="20000"
+										step="1000"
+									/>
+								</div>
+							</div>
+						</CollapsibleContent>
+					</Collapsible>
 				</Card>
 
 				{/* Actions */}

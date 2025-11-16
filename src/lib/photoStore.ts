@@ -29,6 +29,19 @@ export interface BodyMeasurements {
 	unit: "cm" | "in";
 }
 
+export interface AdvancedSettings {
+	showMeshStats: boolean;
+	removeBackground: boolean;
+	randomizeSeed: boolean;
+	seed: number;
+	inferenceSteps: number;
+	octreeResolution: number;
+	guidanceScale: number;
+	numChunks: number;
+	generateTexture: boolean;
+	useFacePhotos: boolean;
+}
+
 export interface FullBodyPhoto {
 	id: string;
 	blob: Blob;
@@ -49,6 +62,7 @@ export interface OnboardingData {
 	bodyMeasurements: BodyMeasurements | null;
 	fullBodyPhoto: FullBodyPhoto | null;
 	generatedModel: GeneratedModel | null;
+	advancedSettings: AdvancedSettings;
 	currentStep: number;
 	isComplete: boolean;
 }
@@ -83,6 +97,10 @@ interface PhotoStore {
 	setBodyMeasurements: (measurements: BodyMeasurements) => void;
 	clearBodyMeasurements: () => void;
 
+	// Advanced settings
+	advancedSettings: AdvancedSettings;
+	setAdvancedSettings: (settings: Partial<AdvancedSettings>) => void;
+
 	// Onboarding progress
 	currentStep: number;
 	setCurrentStep: (step: number) => void;
@@ -100,6 +118,18 @@ const initialState = {
 	fullBodyPhoto: null,
 	generatedModel: null,
 	bodyMeasurements: null,
+	advancedSettings: {
+		showMeshStats: false,
+		removeBackground: true,
+		randomizeSeed: false,
+		seed: 7056020,
+		inferenceSteps: 30,
+		octreeResolution: 512,
+		guidanceScale: 5,
+		numChunks: 8000,
+		generateTexture: false,
+		useFacePhotos: true,
+	},
 	currentStep: 0,
 	isComplete: false,
 };
@@ -238,6 +268,15 @@ export const usePhotoStore = create<PhotoStore>()(
 				set({ bodyMeasurements: null });
 			},
 
+			setAdvancedSettings: (settings) => {
+				set((state) => ({
+					advancedSettings: {
+						...state.advancedSettings,
+						...settings,
+					},
+				}));
+			},
+
 			setCurrentStep: (step) => {
 				set({ currentStep: step });
 			},
@@ -264,6 +303,7 @@ export const usePhotoStore = create<PhotoStore>()(
 					facePhotos: state.facePhotos,
 					bodyMeasurements: state.bodyMeasurements,
 					fullBodyPhoto: state.fullBodyPhoto,
+					advancedSettings: state.advancedSettings,
 					currentStep: state.currentStep,
 					isComplete: state.isComplete,
 				};
@@ -275,6 +315,7 @@ export const usePhotoStore = create<PhotoStore>()(
 			partialize: (state) => ({
 				bodyMeasurements: state.bodyMeasurements,
 				facePhotoMetadata: state.facePhotoMetadata,
+				advancedSettings: state.advancedSettings,
 				currentStep: state.currentStep,
 				isComplete: state.isComplete,
 				// Note: facePhotos with blob URLs are not persisted
