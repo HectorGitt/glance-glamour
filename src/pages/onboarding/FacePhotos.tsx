@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Camera, CheckCircle2, AlertCircle } from "lucide-react";
@@ -16,6 +16,7 @@ const PHOTO_STEPS: { angle: PhotoAngle; label: string; required: boolean }[] = [
 
 const FacePhotos = () => {
 	const navigate = useNavigate();
+	const location = useLocation();
 	const { toast } = useToast();
 	const [currentStep, setCurrentStep] = useState(0);
 	const [isCapturing, setIsCapturing] = useState(false);
@@ -71,6 +72,55 @@ const FacePhotos = () => {
 			}
 		};
 	}, []);
+
+	// Manage camera when navigating to/from this page
+	useEffect(() => {
+		const isOnFacePhotosPage =
+			location.pathname === "/onboarding/face-photos";
+
+		if (!isOnFacePhotosPage && stream) {
+			// Stop camera when leaving the page
+			console.log("Stopping camera - leaving FacePhotos page");
+			stream.getTracks().forEach((track) => track.stop());
+			setStream(null);
+			if (videoRef.current) {
+				videoRef.current.srcObject = null;
+			}
+		} else if (isOnFacePhotosPage && !stream) {
+			// Restart camera when entering the page
+			console.log("Restarting camera - entering FacePhotos page");
+			const restartCamera = async () => {
+				try {
+					const mediaStream =
+						await navigator.mediaDevices.getUserMedia({
+							video: {
+								width: { ideal: 1280 },
+								height: { ideal: 720 },
+								facingMode: "user",
+							},
+						});
+					setStream(mediaStream);
+					if (videoRef.current) {
+						videoRef.current.srcObject = mediaStream;
+					}
+					setCameraError(null);
+				} catch (error) {
+					console.error("Error restarting camera:", error);
+					setCameraError(
+						"Unable to access camera. Please check permissions."
+					);
+				}
+			};
+			restartCamera();
+		}
+
+		return () => {
+			// Cleanup when component unmounts
+			if (stream) {
+				stream.getTracks().forEach((track) => track.stop());
+			}
+		};
+	}, [location.pathname, stream]);
 
 	const capturePhoto = (): Blob | null => {
 		if (!videoRef.current || !canvasRef.current) return null;

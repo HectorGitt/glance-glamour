@@ -11,7 +11,7 @@ import {
 	CollapsibleContent,
 	CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Sparkles, Settings, ChevronDown } from "lucide-react";
+import { Sparkles, Settings, ChevronDown, Play } from "lucide-react";
 import { Client } from "@gradio/client";
 import { usePhotoStore } from "@/lib/photoStore";
 import { toast } from "sonner";
@@ -35,7 +35,7 @@ const Processing = () => {
 	const {
 		fullBodyPhoto,
 		setComplete,
-		setGeneratedModel,
+		addGeneratedModel,
 		facePhotos,
 		getFacePhoto,
 	} = usePhotoStore();
@@ -47,14 +47,14 @@ const Processing = () => {
 
 	// Advanced settings state
 	const [advancedSettings, setAdvancedSettingsState] = useState({
+		generationType: "single" as "single" | "multiview", // 'single' or 'multiview'
 		generateTexture: false,
-		useFacePhotos: false,
 		showMeshStats: false,
 		removeBackground: true,
-		randomizeSeed: false,
+		randomizeSeed: true,
 		seed: 7056020,
 		inferenceSteps: 30,
-		octreeResolution: 512,
+		octreeResolution: 256,
 		guidanceScale: 5,
 		numChunks: 8000,
 	});
@@ -63,253 +63,282 @@ const Processing = () => {
 		setAdvancedSettingsState((prev) => ({ ...prev, ...updates }));
 	};
 
-	useEffect(() => {
-		const processAvatar = async () => {
-			if (!fullBodyPhoto) {
+	const startGeneration = async () => {
+		// Check if we have the required images based on generation type
+		if (advancedSettings.generationType === "single" && !fullBodyPhoto) {
+			toast.error("No full body photo found. Please upload one first.");
+			navigate("/onboarding/full-body-upload");
+			return;
+		}
+
+		if (advancedSettings.generationType === "multiview") {
+			const availableFacePhotos = facePhotos.length;
+			if (availableFacePhotos === 0) {
 				toast.error(
-					"No full body photo found. Please upload one first."
+					"No face photos found. Please capture face photos first."
 				);
-				navigate("/onboarding/full-body-upload");
+				navigate("/onboarding/face-photos");
 				return;
 			}
+			if (availableFacePhotos < 2) {
+				toast.error(
+					"At least 2 face photos are recommended for multiview generation."
+				);
+			}
+		}
 
-			setIsProcessing(true);
+		setIsProcessing(true);
 
-			try {
-				// Step 1: Connecting to AI service
-				setCurrentStep(0);
-				setProgress(10);
-				toast.info("Connecting to AI avatar generation service...");
+		try {
+			// Step 1: Connecting to AI service
+			setCurrentStep(0);
+			setProgress(10);
+			toast.info("Connecting to AI avatar generation service...");
 
-				const gradioUrl =
-					import.meta.env.VITE_GRADIO_API_URL ||
-					"https://1c688ee59ea0672ec2.gradio.live/";
-				const client = await Client.connect(gradioUrl);
+			const gradioUrl =
+				import.meta.env.VITE_GRADIO_API_URL ||
+				"https://31205cad7dd4ba1b91.gradio.live/";
+			const client = await Client.connect(gradioUrl);
 
-				// Step 2: Uploading image
-				setCurrentStep(1);
-				setProgress(30);
-				toast.info("Uploading your image...");
+			// Step 2: Uploading image
+			setCurrentStep(1);
+			setProgress(30);
+			toast.info(
+				`Uploading ${
+					advancedSettings.generationType === "multiview"
+						? "face photos"
+						: "image"
+				}...`
+			);
 
-				// Step 3: Processing image
-				setCurrentStep(2);
-				setProgress(60);
-				toast.info("Generating your 3D avatar...");
+			// Step 3: Processing image
+			setCurrentStep(2);
+			setProgress(60);
+			toast.info("Generating your 3D avatar...");
 
-				// Prepare multiview images from face photos if enabled and available
-				let frontFace = null;
-				let leftFace = null;
-				let rightFace = null;
-				let profileFace = null;
+			// Prepare images based on generation type
+			let mainImage: Blob;
+			let frontFace = null;
+			let leftFace = null;
+			let rightFace = null;
+			let profileFace = null;
 
-				if (advancedSettings.useFacePhotos) {
-					frontFace = getFacePhoto("front");
-					leftFace = getFacePhoto("3/4-left");
-					rightFace = getFacePhoto("3/4-right");
-					profileFace = getFacePhoto("profile");
+			if (advancedSettings.generationType === "single") {
+				mainImage = fullBodyPhoto!.blob;
+				toast.info("Using single image for generation");
+			} else {
+				// Multiview: use face photos
+				frontFace = getFacePhoto("front");
+				leftFace = getFacePhoto("3/4-left");
+				rightFace = getFacePhoto("3/4-right");
+				profileFace = getFacePhoto("profile");
 
-					const multiviewCount = [
-						frontFace,
-						leftFace,
-						rightFace,
-						profileFace,
-					].filter(Boolean).length;
-					if (multiviewCount > 0) {
-						toast.info(
-							`Using ${multiviewCount} face photos for enhanced 3D generation`
-						);
-					}
+				// Use the front face as the main image for multiview
+				mainImage = frontFace ? frontFace.blob : facePhotos[0].blob;
+
+				const multiviewCount = [
+					frontFace,
+					leftFace,
+					rightFace,
+					profileFace,
+				].filter(Boolean).length;
+				toast.info(
+					`Using ${multiviewCount} face photos for multiview generation`
+				);
+			}
+
+			// Choose API endpoint based on texture generation setting
+			const apiEndpoint = advancedSettings.generateTexture
+				? "/wrap_generation_all"
+				: "/wrap_shape_generation";
+
+			toast.info(
+				`Generating ${advancedSettings.generationType} ${
+					advancedSettings.generateTexture
+						? "mesh with texture"
+						: "mesh only"
+				}...`
+			);
+
+			// Call the appropriate Hunyuan3D-2 generation endpoint
+			const apiParams: any = {
+				caption: "", // Empty caption for image-only generation
+				steps: advancedSettings.inferenceSteps, // Configurable inference steps
+				guidance_scale: advancedSettings.guidanceScale, // Configurable guidance scale
+				seed: advancedSettings.randomizeSeed
+					? Math.floor(Math.random() * 10000000)
+					: advancedSettings.seed, // Configurable seed
+				octree_resolution: advancedSettings.octreeResolution, // Configurable octree resolution
+				check_box_rembg: advancedSettings.removeBackground, // Configurable background removal
+				num_chunks: advancedSettings.numChunks, // Configurable number of chunks
+				randomize_seed: advancedSettings.randomizeSeed, // Use random seed flag
+			};
+
+			if (advancedSettings.generationType === "single") {
+				// Single image generation - pass main image and set multiview params to null
+				apiParams.image = mainImage;
+				apiParams.mv_image_front = null;
+				apiParams.mv_image_back = null;
+				apiParams.mv_image_left = null;
+				apiParams.mv_image_right = null;
+			} else {
+				// Multiview generation - pass multiview images, no main image
+				apiParams.image = null;
+				apiParams.mv_image_front = frontFace ? frontFace.blob : null;
+				apiParams.mv_image_back = profileFace ? profileFace.blob : null;
+				apiParams.mv_image_left = leftFace ? leftFace.blob : null;
+				apiParams.mv_image_right = rightFace ? rightFace.blob : null;
+			}
+
+			const result = await client.predict(apiEndpoint, apiParams);
+
+			// Step 4: Finalizing
+			setCurrentStep(3);
+			setProgress(90);
+			toast.success("Avatar generated successfully!");
+
+			// Handle the response from Hunyuan3D-2 Gradio API
+			// Response format: [stats, seed, downloadUpdate]
+			let modelBlob: Blob;
+			let status: string = "completed";
+			let fileName: string = "generated-model.glb";
+
+			if (Array.isArray(result.data) && result.data.length >= 3) {
+				const [stats, seed, downloadUpdate] = result.data;
+
+				console.log("API Response:", { stats, seed, downloadUpdate });
+
+				// Store mesh stats if enabled
+				if (advancedSettings.showMeshStats && stats) {
+					setMeshStats(stats);
 				}
 
-				// Choose API endpoint based on texture generation setting
-				const apiEndpoint = advancedSettings.generateTexture
-					? "/wrap_generation_all"
-					: "/wrap_shape_generation";
+				// The download button update contains the file information
+				if (downloadUpdate && typeof downloadUpdate === "object") {
+					// Handle different possible formats for downloadUpdate
+					let fileUrl: string | null = null;
 
-				toast.info(
-					`Generating ${
-						advancedSettings.generateTexture
-							? "mesh with texture"
-							: "mesh only"
-					}...`
-				);
-
-				// Call the appropriate Hunyuan3D-2 generation endpoint
-				const result = await client.predict(apiEndpoint, {
-					caption: "", // Empty caption for image-only generation
-					image: fullBodyPhoto.blob, // Single image input
-					mv_image_front: frontFace ? frontFace.blob : null, // Front face photo for multiview
-					mv_image_back: profileFace ? profileFace.blob : null, // Profile face photo for back view
-					mv_image_left: leftFace ? leftFace.blob : null, // Left 3/4 face photo
-					mv_image_right: rightFace ? rightFace.blob : null, // Right 3/4 face photo
-					steps: advancedSettings.inferenceSteps, // Configurable inference steps
-					guidance_scale: advancedSettings.guidanceScale, // Configurable guidance scale
-					seed: advancedSettings.randomizeSeed
-						? Math.floor(Math.random() * 10000000)
-						: advancedSettings.seed, // Configurable seed
-					octree_resolution: advancedSettings.octreeResolution, // Configurable octree resolution
-					check_box_rembg: advancedSettings.removeBackground, // Configurable background removal
-					num_chunks: advancedSettings.numChunks, // Configurable number of chunks
-					randomize_seed: advancedSettings.randomizeSeed, // Use random seed flag
-				});
-
-				// Step 4: Finalizing
-				setCurrentStep(3);
-				setProgress(90);
-				toast.success("Avatar generated successfully!");
-
-				// Handle the response from Hunyuan3D-2 Gradio API
-				// Response format: [stats, seed, downloadUpdate]
-				let modelBlob: Blob;
-				let status: string = "completed";
-				let fileName: string = "generated-model.glb";
-
-				if (Array.isArray(result.data) && result.data.length >= 3) {
-					const [stats, seed, downloadUpdate] = result.data;
-
-					console.log("API Response:", {
-						stats,
-						seed,
-						downloadUpdate,
-					});
-
-					// Store mesh stats if enabled
-					if (advancedSettings.showMeshStats && stats) {
-						setMeshStats(stats);
+					if (
+						downloadUpdate.value &&
+						typeof downloadUpdate.value === "object" &&
+						downloadUpdate.value.url
+					) {
+						fileUrl = downloadUpdate.value.url;
+					} else if (downloadUpdate.url) {
+						fileUrl = downloadUpdate.url;
+					} else if (downloadUpdate.file) {
+						fileUrl = downloadUpdate.file;
 					}
 
-					// The download button update contains the file information
-					if (downloadUpdate && typeof downloadUpdate === "object") {
-						// Handle different possible formats for downloadUpdate
-						let fileUrl: string | null = null;
-
-						if (downloadUpdate.value) {
-							fileUrl = downloadUpdate.value;
-						} else if (downloadUpdate.url) {
-							fileUrl = downloadUpdate.url;
-						} else if (downloadUpdate.file) {
-							fileUrl = downloadUpdate.file;
-						}
-
-						if (fileUrl) {
-							// If it's a URL, download the file
-							if (typeof fileUrl === "string") {
-								if (fileUrl.startsWith("http")) {
-									const response = await fetch(fileUrl);
-									if (!response.ok) {
-										throw new Error(
-											`Failed to download model: ${response.status} ${response.statusText}`
-										);
-									}
-									modelBlob = await response.blob();
-									fileName =
-										fileUrl.split("/").pop() ||
-										"generated-model.glb";
-								} else if (fileUrl.startsWith("/")) {
-									// Relative path from Gradio server
-									const fullUrl = `${gradioUrl.replace(
-										/\/$/,
-										""
-									)}${fileUrl}`;
-									const response = await fetch(fullUrl);
-									if (!response.ok) {
-										throw new Error(
-											`Failed to download model: ${response.status} ${response.statusText}`
-										);
-									}
-									modelBlob = await response.blob();
-									fileName =
-										fileUrl.split("/").pop() ||
-										"generated-model.glb";
-								} else {
+					if (fileUrl) {
+						// If it's a URL, download the file
+						if (typeof fileUrl === "string") {
+							if (fileUrl.startsWith("http")) {
+								const response = await fetch(fileUrl);
+								if (!response.ok) {
 									throw new Error(
-										`Unsupported file URL format: ${fileUrl}`
+										`Failed to download model: ${response.status} ${response.statusText}`
 									);
 								}
+								modelBlob = await response.blob();
+								fileName =
+									fileUrl.split("/").pop() ||
+									"generated-model.glb";
+							} else if (fileUrl.startsWith("/")) {
+								// Relative path from Gradio server
+								const fullUrl = `${gradioUrl.replace(
+									/\/$/,
+									""
+								)}${fileUrl}`;
+								const response = await fetch(fullUrl);
+								if (!response.ok) {
+									throw new Error(
+										`Failed to download model: ${response.status} ${response.statusText}`
+									);
+								}
+								modelBlob = await response.blob();
+								fileName =
+									fileUrl.split("/").pop() ||
+									"generated-model.glb";
+							} else {
+								throw new Error(
+									`Unsupported file URL format: ${fileUrl}`
+								);
 							}
-						} else if (
-							downloadUpdate instanceof File ||
-							downloadUpdate instanceof Blob
-						) {
-							modelBlob = downloadUpdate;
-							fileName =
-								downloadUpdate instanceof File
-									? downloadUpdate.name
-									: "generated-model.glb";
-						} else {
-							throw new Error(
-								`No downloadable file found in API response: ${JSON.stringify(
-									downloadUpdate
-								)}`
-							);
 						}
+					} else if (
+						downloadUpdate instanceof File ||
+						downloadUpdate instanceof Blob
+					) {
+						modelBlob = downloadUpdate;
+						fileName =
+							downloadUpdate instanceof File
+								? downloadUpdate.name
+								: "generated-model.glb";
 					} else {
 						throw new Error(
-							"Invalid downloadUpdate format in API response"
+							`No downloadable file found in API response: ${JSON.stringify(
+								downloadUpdate
+							)}`
 						);
 					}
-				} else if (
-					result.data instanceof File ||
-					result.data instanceof Blob
-				) {
-					// Direct file response (fallback)
-					modelBlob = result.data;
 				} else {
 					throw new Error(
-						`Unexpected API response format: ${JSON.stringify(
-							result.data
-						)}`
+						"Invalid downloadUpdate format in API response"
 					);
 				}
-
-				// Validate that we have a proper Blob
-				if (!(modelBlob instanceof Blob)) {
-					throw new Error(
-						`Expected Blob, but got ${typeof modelBlob}: ${modelBlob}`
-					);
-				}
-
-				// Store the generated model in the photo store
-				setGeneratedModel({
-					blob: modelBlob,
-					status: status,
-				});
-
-				setProgress(100);
-				setComplete(true);
-
-				setTimeout(() => navigate("/onboarding/avatar-preview"), 1000);
-			} catch (error) {
-				console.error("Avatar generation failed:", error);
-				toast.error("Failed to generate avatar. Please try again.");
-				navigate("/onboarding/full-body-upload");
-			} finally {
-				setIsProcessing(false);
+			} else if (
+				result.data instanceof File ||
+				result.data instanceof Blob
+			) {
+				// Direct file response (fallback)
+				modelBlob = result.data;
+			} else {
+				throw new Error(
+					`Unexpected API response format: ${JSON.stringify(
+						result.data
+					)}`
+				);
 			}
-		};
 
-		// Start processing after a short delay
-		const timer = setTimeout(() => {
-			processAvatar();
-		}, 1000);
+			// Validate that we have a proper Blob
+			if (!(modelBlob instanceof Blob)) {
+				throw new Error(
+					`Expected Blob, but got ${typeof modelBlob}: ${modelBlob}`
+				);
+			}
 
+			// Store the generated model in the photo store
+			addGeneratedModel({
+				model: modelBlob,
+				generationType: advancedSettings.generationType,
+				hasTexture: advancedSettings.generateTexture,
+				name: `Avatar ${new Date().toLocaleString()}`,
+			});
+
+			setProgress(100);
+			setComplete(true);
+
+			setTimeout(() => navigate("/onboarding/avatar-preview"), 1000);
+		} catch (error) {
+			console.error("Avatar generation failed:", error);
+			toast.error("Failed to generate avatar. Please try again.");
+			navigate("/onboarding/full-body-upload");
+		} finally {
+			setIsProcessing(false);
+		}
+	};
+
+	useEffect(() => {
+		// Only set up the tip interval, don't auto-start generation
 		const tipInterval = setInterval(() => {
 			setCurrentTip((prev) => (prev + 1) % TIPS.length);
 		}, 3000);
 
 		return () => {
-			clearTimeout(timer);
 			clearInterval(tipInterval);
 		};
-	}, [
-		navigate,
-		fullBodyPhoto,
-		setComplete,
-		setGeneratedModel,
-		facePhotos,
-		getFacePhoto,
-		advancedSettings,
-	]);
+	}, []);
 
 	const PROCESSING_STEPS = [
 		{ label: "Connecting to AI service", duration: 2000 },
@@ -334,7 +363,183 @@ const Processing = () => {
 							{PROCESSING_STEPS[currentStep]?.label ||
 								"Finalizing..."}
 						</p>
+						{!isProcessing && (
+							<div className="mt-2 text-sm text-muted-foreground">
+								{advancedSettings.generationType ===
+								"single" ? (
+									<span>
+										Using single image generation •{" "}
+										{advancedSettings.generateTexture
+											? "Mesh + Texture"
+											: "Mesh Only"}
+									</span>
+								) : (
+									<span>
+										Using multiview generation with{" "}
+										{facePhotos.length} face photo
+										{facePhotos.length !== 1
+											? "s"
+											: ""} •{" "}
+										{advancedSettings.generateTexture
+											? "Mesh + Texture"
+											: "Mesh Only"}
+									</span>
+								)}
+							</div>
+						)}
 					</div>
+
+					{/* Generation Type Selection */}
+					{!isProcessing && (
+						<div className="space-y-4">
+							<div className="border border-border rounded-lg p-6 bg-muted/30">
+								<h3 className="text-lg font-semibold mb-4">
+									Generation Type
+								</h3>
+								<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+									<div
+										className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
+											advancedSettings.generationType ===
+											"single"
+												? "border-primary bg-primary/5"
+												: "border-border hover:border-primary/50"
+										}`}
+										onClick={() =>
+											setAdvancedSettings({
+												generationType: "single",
+											})
+										}
+									>
+										<div className="flex items-center space-x-3">
+											<div
+												className={`w-4 h-4 rounded-full border-2 ${
+													advancedSettings.generationType ===
+													"single"
+														? "border-primary bg-primary"
+														: "border-muted-foreground"
+												}`}
+											></div>
+											<div>
+												<h4 className="font-medium">
+													Single Image
+												</h4>
+												<p className="text-sm text-muted-foreground">
+													Use one full body photo for
+													generation
+												</p>
+											</div>
+										</div>
+									</div>
+
+									<div
+										className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
+											advancedSettings.generationType ===
+											"multiview"
+												? "border-primary bg-primary/5"
+												: "border-border hover:border-primary/50"
+										}`}
+										onClick={() =>
+											setAdvancedSettings({
+												generationType: "multiview",
+											})
+										}
+									>
+										<div className="flex items-center space-x-3">
+											<div
+												className={`w-4 h-4 rounded-full border-2 ${
+													advancedSettings.generationType ===
+													"multiview"
+														? "border-primary bg-primary"
+														: "border-muted-foreground"
+												}`}
+											></div>
+											<div>
+												<h4 className="font-medium">
+													Multiview
+												</h4>
+												<p className="text-sm text-muted-foreground">
+													Use multiple face photos
+													from different angles
+												</p>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							{/* Generation Quality Selection */}
+							<div className="border border-border rounded-lg p-6 bg-muted/30">
+								<h3 className="text-lg font-semibold mb-4">
+									Generation Quality
+								</h3>
+								<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+									<div
+										className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
+											!advancedSettings.generateTexture
+												? "border-primary bg-primary/5"
+												: "border-border hover:border-primary/50"
+										}`}
+										onClick={() =>
+											setAdvancedSettings({
+												generateTexture: false,
+											})
+										}
+									>
+										<div className="flex items-center space-x-3">
+											<div
+												className={`w-4 h-4 rounded-full border-2 ${
+													!advancedSettings.generateTexture
+														? "border-primary bg-primary"
+														: "border-muted-foreground"
+												}`}
+											></div>
+											<div>
+												<h4 className="font-medium">
+													Mesh Only
+												</h4>
+												<p className="text-sm text-muted-foreground">
+													Generate 3D geometry without
+													textures
+												</p>
+											</div>
+										</div>
+									</div>
+
+									<div
+										className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
+											advancedSettings.generateTexture
+												? "border-primary bg-primary/5"
+												: "border-border hover:border-primary/50"
+										}`}
+										onClick={() =>
+											setAdvancedSettings({
+												generateTexture: true,
+											})
+										}
+									>
+										<div className="flex items-center space-x-3">
+											<div
+												className={`w-4 h-4 rounded-full border-2 ${
+													advancedSettings.generateTexture
+														? "border-primary bg-primary"
+														: "border-muted-foreground"
+												}`}
+											></div>
+											<div>
+												<h4 className="font-medium">
+													Mesh + Texture
+												</h4>
+												<p className="text-sm text-muted-foreground">
+													Generate 3D geometry with
+													textures
+												</p>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					)}
 
 					{/* Advanced Settings */}
 					{!isProcessing && (
@@ -354,42 +559,6 @@ const Processing = () => {
 								</CollapsibleTrigger>
 								<CollapsibleContent className="space-y-4 mt-4">
 									<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-										<div className="flex items-center space-x-2">
-											<Checkbox
-												id="generate-texture"
-												checked={
-													advancedSettings.generateTexture
-												}
-												onCheckedChange={(checked) =>
-													setAdvancedSettings({
-														generateTexture:
-															checked as boolean,
-													})
-												}
-											/>
-											<Label htmlFor="generate-texture">
-												Generate with Texture
-											</Label>
-										</div>
-
-										<div className="flex items-center space-x-2">
-											<Checkbox
-												id="use-face-photos"
-												checked={
-													advancedSettings.useFacePhotos
-												}
-												onCheckedChange={(checked) =>
-													setAdvancedSettings({
-														useFacePhotos:
-															checked as boolean,
-													})
-												}
-											/>
-											<Label htmlFor="use-face-photos">
-												Use Face Photos
-											</Label>
-										</div>
-
 										<div className="flex items-center space-x-2">
 											<Checkbox
 												id="show-mesh-stats"
@@ -568,12 +737,29 @@ const Processing = () => {
 						</div>
 					)}
 
-					<div className="space-y-3">
-						<Progress value={progress} className="h-2" />
-						<p className="text-sm text-muted-foreground">
-							{Math.round(progress)}% complete
-						</p>
-					</div>
+					{/* Start Generation Button */}
+					{!isProcessing && (
+						<div className="flex justify-center pt-6">
+							<Button
+								onClick={startGeneration}
+								size="lg"
+								className="px-8 py-3 text-lg font-semibold"
+							>
+								<Play className="w-5 h-5 mr-2" />
+								Start Generation
+							</Button>
+						</div>
+					)}
+
+					{/* Processing Progress */}
+					{isProcessing && (
+						<div className="space-y-3">
+							<Progress value={progress} className="h-2" />
+							<p className="text-sm text-muted-foreground">
+								{Math.round(progress)}% complete
+							</p>
+						</div>
+					)}
 
 					{/* Mesh Statistics */}
 					{meshStats && advancedSettings.showMeshStats && (

@@ -55,13 +55,17 @@ export interface GeneratedModel {
 	url: string;
 	status: string;
 	timestamp: number;
+	generationType: "single" | "multiview";
+	hasTexture: boolean;
+	name?: string; // Optional custom name
 }
 
 export interface OnboardingData {
 	facePhotos: FacePhoto[];
 	bodyMeasurements: BodyMeasurements | null;
 	fullBodyPhoto: FullBodyPhoto | null;
-	generatedModel: GeneratedModel | null;
+	generatedModels: GeneratedModel[];
+	currentModel: GeneratedModel | null; // Currently selected/viewed model
 	advancedSettings: AdvancedSettings;
 	currentStep: number;
 	isComplete: boolean;
@@ -85,12 +89,17 @@ interface PhotoStore {
 	) => void;
 	clearFullBodyPhoto: () => void;
 
-	// Generated model
-	generatedModel: GeneratedModel | null;
-	setGeneratedModel: (
+	// Generated models
+	generatedModels: GeneratedModel[];
+	currentModel: GeneratedModel | null;
+	addGeneratedModel: (
 		model: Omit<GeneratedModel, "id" | "url" | "timestamp">
 	) => void;
-	clearGeneratedModel: () => void;
+	setCurrentModel: (model: GeneratedModel | null) => void;
+	removeGeneratedModel: (id: string) => void;
+	renameGeneratedModel: (id: string, name: string) => void;
+	clearGeneratedModels: () => void;
+	getGeneratedModel: (id: string) => GeneratedModel | undefined;
 
 	// Body measurements
 	bodyMeasurements: BodyMeasurements | null;
@@ -116,7 +125,8 @@ const initialState = {
 	facePhotos: [],
 	facePhotoMetadata: [],
 	fullBodyPhoto: null,
-	generatedModel: null,
+	generatedModels: [],
+	currentModel: null,
 	bodyMeasurements: null,
 	advancedSettings: {
 		showMeshStats: false,
@@ -234,7 +244,7 @@ export const usePhotoStore = create<PhotoStore>()(
 				set({ fullBodyPhoto: null });
 			},
 
-			setGeneratedModel: (modelData) => {
+			addGeneratedModel: (modelData) => {
 				const id = `generated-model-${Date.now()}`;
 				const url = URL.createObjectURL(modelData.blob);
 				const model: GeneratedModel = {
@@ -244,20 +254,63 @@ export const usePhotoStore = create<PhotoStore>()(
 					timestamp: Date.now(),
 				};
 
-				// Clean up previous model if exists
-				const currentModel = get().generatedModel;
-				if (currentModel) {
-					URL.revokeObjectURL(currentModel.url);
-				}
-
-				set({ generatedModel: model });
+				set((state) => ({
+					generatedModels: [...state.generatedModels, model],
+					currentModel: model, // Set as current model
+				}));
 			},
-			clearGeneratedModel: () => {
-				const currentModel = get().generatedModel;
-				if (currentModel) {
-					URL.revokeObjectURL(currentModel.url);
-				}
-				set({ generatedModel: null });
+
+			setCurrentModel: (model) => {
+				set({ currentModel: model });
+			},
+
+			removeGeneratedModel: (id) => {
+				set((state) => {
+					const modelToRemove = state.generatedModels.find(
+						(m) => m.id === id
+					);
+					if (modelToRemove) {
+						URL.revokeObjectURL(modelToRemove.url);
+					}
+
+					const newModels = state.generatedModels.filter(
+						(m) => m.id !== id
+					);
+					let newCurrentModel = state.currentModel;
+
+					// If we're removing the current model, set current to null or the last model
+					if (state.currentModel?.id === id) {
+						newCurrentModel =
+							newModels.length > 0
+								? newModels[newModels.length - 1]
+								: null;
+					}
+
+					return {
+						generatedModels: newModels,
+						currentModel: newCurrentModel,
+					};
+				});
+			},
+
+			renameGeneratedModel: (id, name) => {
+				set((state) => ({
+					generatedModels: state.generatedModels.map((model) =>
+						model.id === id ? { ...model, name } : model
+					),
+				}));
+			},
+
+			clearGeneratedModels: () => {
+				// Clean up blob URLs
+				get().generatedModels.forEach((model) => {
+					URL.revokeObjectURL(model.url);
+				});
+				set({ generatedModels: [], currentModel: null });
+			},
+
+			getGeneratedModel: (id) => {
+				return get().generatedModels.find((model) => model.id === id);
 			},
 
 			setBodyMeasurements: (measurements) => {
@@ -294,6 +347,9 @@ export const usePhotoStore = create<PhotoStore>()(
 				if (fullBodyPhoto) {
 					URL.revokeObjectURL(fullBodyPhoto.url);
 				}
+				get().generatedModels.forEach((model) => {
+					URL.revokeObjectURL(model.url);
+				});
 				set(initialState);
 			},
 
@@ -303,6 +359,8 @@ export const usePhotoStore = create<PhotoStore>()(
 					facePhotos: state.facePhotos,
 					bodyMeasurements: state.bodyMeasurements,
 					fullBodyPhoto: state.fullBodyPhoto,
+					generatedModels: state.generatedModels,
+					currentModel: state.currentModel,
 					advancedSettings: state.advancedSettings,
 					currentStep: state.currentStep,
 					isComplete: state.isComplete,

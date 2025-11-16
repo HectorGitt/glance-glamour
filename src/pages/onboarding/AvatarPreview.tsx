@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Smile, Meh, Sparkles, Edit } from "lucide-react";
+import { Smile, Meh, Sparkles, Edit, Trash2, Check, X } from "lucide-react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
 import { usePhotoStore } from "@/lib/photoStore";
@@ -26,10 +26,18 @@ const LoadingFallback = () => (
 
 const AvatarPreview = () => {
 	const navigate = useNavigate();
-	const { generatedModel } = usePhotoStore();
+	const {
+		generatedModels,
+		currentModel,
+		setCurrentModel,
+		removeGeneratedModel,
+		renameGeneratedModel,
+	} = usePhotoStore();
 	const [expression, setExpression] = useState<
 		"neutral" | "smile" | "editorial"
 	>("neutral");
+	const [editingIndex, setEditingIndex] = useState<number | null>(null);
+	const [editingName, setEditingName] = useState("");
 
 	const expressions = [
 		{ id: "neutral" as const, icon: Meh, label: "Neutral" },
@@ -53,7 +61,7 @@ const AvatarPreview = () => {
 					{/* 3D Viewer */}
 					<Card className="p-8 border-border/50 bg-card/50 backdrop-blur-sm shadow-premium">
 						<div className="aspect-square bg-muted rounded-lg overflow-hidden mb-4">
-							{generatedModel ? (
+							{currentModel ? (
 								<Canvas
 									camera={{
 										position: [0, 0, 2],
@@ -67,7 +75,11 @@ const AvatarPreview = () => {
 										intensity={1}
 									/>
 									<Suspense fallback={null}>
-										<GLBModel url={generatedModel.url} />
+										<GLBModel
+											url={URL.createObjectURL(
+												currentModel.model
+											)}
+										/>
 									</Suspense>
 									<OrbitControls
 										enablePan={true}
@@ -121,6 +133,181 @@ const AvatarPreview = () => {
 
 					{/* Controls */}
 					<div className="space-y-6">
+						{/* Model History */}
+						<Card className="p-6 border-border/50 bg-card/50 backdrop-blur-sm shadow-elegant">
+							<h3 className="font-semibold mb-4 flex items-center gap-2">
+								<Edit className="w-5 h-5 text-primary" />
+								Your Avatars ({generatedModels.length})
+							</h3>
+							<div className="space-y-3 max-h-96 overflow-y-auto">
+								{generatedModels.length === 0 ? (
+									<p className="text-sm text-muted-foreground text-center py-4">
+										No avatars generated yet
+									</p>
+								) : (
+									generatedModels.map((model, index) => (
+										<div
+											key={index}
+											className={`border rounded-lg p-3 transition-all ${
+												currentModel === model
+													? "border-primary bg-primary/5"
+													: "border-border hover:border-primary/50"
+											}`}
+										>
+											<div className="flex items-center justify-between">
+												<div
+													className="flex-1 cursor-pointer"
+													onClick={() =>
+														setCurrentModel(model)
+													}
+												>
+													{editingIndex === index ? (
+														<input
+															type="text"
+															value={editingName}
+															onChange={(e) =>
+																setEditingName(
+																	e.target
+																		.value
+																)
+															}
+															onKeyDown={(e) => {
+																if (
+																	e.key ===
+																	"Enter"
+																) {
+																	// TODO: Implement rename functionality in store
+																	setEditingIndex(
+																		null
+																	);
+																} else if (
+																	e.key ===
+																	"Escape"
+																) {
+																	setEditingIndex(
+																		null
+																	);
+																	setEditingName(
+																		""
+																	);
+																}
+															}}
+															className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+															autoFocus
+														/>
+													) : (
+														<h4 className="font-medium text-sm">
+															{model.name ||
+																`Avatar ${
+																	index + 1
+																}`}
+														</h4>
+													)}
+													<div className="flex items-center gap-2 mt-1">
+														<span className="text-xs text-muted-foreground capitalize">
+															{
+																model.generationType
+															}
+														</span>
+														<span className="text-xs text-muted-foreground">
+															{model.hasTexture
+																? "• Textured"
+																: "• Mesh Only"}
+														</span>
+													</div>
+													<p className="text-xs text-muted-foreground mt-1">
+														{new Date(
+															model.timestamp ||
+																Date.now()
+														).toLocaleString()}
+													</p>
+												</div>
+												<div className="flex items-center gap-1 ml-2">
+													{editingIndex === index ? (
+														<>
+															<Button
+																size="sm"
+																variant="ghost"
+																className="h-6 w-6 p-0"
+																onClick={() => {
+																	renameGeneratedModel(
+																		model.id,
+																		editingName
+																	);
+																	setEditingIndex(
+																		null
+																	);
+																}}
+															>
+																<Check className="w-3 h-3" />
+															</Button>
+															<Button
+																size="sm"
+																variant="ghost"
+																className="h-6 w-6 p-0"
+																onClick={() => {
+																	setEditingIndex(
+																		null
+																	);
+																	setEditingName(
+																		""
+																	);
+																}}
+															>
+																<X className="w-3 h-3" />
+															</Button>
+														</>
+													) : (
+														<>
+															<Button
+																size="sm"
+																variant="ghost"
+																className="h-6 w-6 p-0"
+																onClick={() => {
+																	setEditingIndex(
+																		index
+																	);
+																	setEditingName(
+																		model.name ||
+																			`Avatar ${
+																				index +
+																				1
+																			}`
+																	);
+																}}
+															>
+																<Edit className="w-3 h-3" />
+															</Button>
+															<Button
+																size="sm"
+																variant="ghost"
+																className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+																onClick={() =>
+																	removeGeneratedModel(
+																		model.id
+																	)
+																}
+															>
+																<Trash2 className="w-3 h-3" />
+															</Button>
+														</>
+													)}
+													<div
+														className={`w-3 h-3 rounded-full ml-1 ${
+															currentModel ===
+															model
+																? "bg-primary"
+																: "bg-muted-foreground"
+														}`}
+													></div>
+												</div>
+											</div>
+										</div>
+									))
+								)}
+							</div>
+						</Card>
+
 						<Card className="p-6 border-border/50 bg-card/50 backdrop-blur-sm shadow-elegant">
 							<h3 className="font-semibold mb-4 flex items-center gap-2">
 								<Edit className="w-5 h-5 text-primary" />
