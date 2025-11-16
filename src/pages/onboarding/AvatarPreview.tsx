@@ -1,16 +1,96 @@
-import { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Smile, Meh, Sparkles, Edit, Trash2, Check, X } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import {
+	Smile,
+	Meh,
+	Sparkles,
+	Edit,
+	Trash2,
+	Check,
+	X,
+	Sun,
+	Lightbulb,
+	ChevronDown,
+} from "lucide-react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
 import { usePhotoStore } from "@/lib/photoStore";
 import { Suspense } from "react";
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import * as THREE from "three";
 
 // GLB Model Loader Component
 const GLBModel = ({ url }: { url: string }) => {
 	const { scene } = useGLTF(url);
+
+	// Ensure textures are properly applied to materials
+	React.useEffect(() => {
+		if (scene) {
+			scene.traverse((child) => {
+				if (child instanceof THREE.Mesh && child.material) {
+					// Ensure material properties are set for texture rendering
+					if (Array.isArray(child.material)) {
+						child.material.forEach((mat) => {
+							if (mat instanceof THREE.MeshStandardMaterial) {
+								// Ensure textures are properly loaded
+								if (mat.map) {
+									mat.map.needsUpdate = true;
+									mat.map.encoding = THREE.sRGBEncoding;
+								}
+								if (mat.normalMap) {
+									mat.normalMap.needsUpdate = true;
+								}
+								if (mat.roughnessMap) {
+									mat.roughnessMap.needsUpdate = true;
+								}
+								if (mat.metalnessMap) {
+									mat.metalnessMap.needsUpdate = true;
+								}
+								if (mat.emissiveMap) {
+									mat.emissiveMap.needsUpdate = true;
+									mat.emissiveMap.encoding =
+										THREE.sRGBEncoding;
+								}
+								mat.needsUpdate = true;
+							}
+						});
+					} else if (
+						child.material instanceof THREE.MeshStandardMaterial
+					) {
+						// Ensure textures are properly loaded
+						if (child.material.map) {
+							child.material.map.needsUpdate = true;
+							child.material.map.encoding = THREE.sRGBEncoding;
+						}
+						if (child.material.normalMap) {
+							child.material.normalMap.needsUpdate = true;
+						}
+						if (child.material.roughnessMap) {
+							child.material.roughnessMap.needsUpdate = true;
+						}
+						if (child.material.metalnessMap) {
+							child.material.metalnessMap.needsUpdate = true;
+						}
+						if (child.material.emissiveMap) {
+							child.material.emissiveMap.needsUpdate = true;
+							child.material.emissiveMap.encoding =
+								THREE.sRGBEncoding;
+						}
+						child.material.needsUpdate = true;
+					}
+				}
+			});
+		}
+	}, [scene]);
+
 	return <primitive object={scene} scale={1} />;
 };
 
@@ -39,11 +119,34 @@ const AvatarPreview = () => {
 	const [editingIndex, setEditingIndex] = useState<number | null>(null);
 	const [editingName, setEditingName] = useState("");
 
-	const expressions = [
-		{ id: "neutral" as const, icon: Meh, label: "Neutral" },
-		{ id: "smile" as const, icon: Smile, label: "Smile" },
-		{ id: "editorial" as const, icon: Sparkles, label: "Editorial" },
-	];
+	// Lighting collapsible state
+	const [lightingOpen, setLightingOpen] = useState(false);
+
+	// Update spot light target position when it changes
+	React.useEffect(() => {
+		if (spotLightTargetRef.current) {
+			spotLightTargetRef.current.position.set(
+				...lighting.spotLightTarget
+			);
+		}
+	}, [lighting.spotLightTarget]);
+
+	// Lighting controls state
+	const [lighting, setLighting] = useState({
+		ambientIntensity: 1.2,
+		directionalIntensity: 1.0,
+		directionalPosition: [10, 10, 5] as [number, number, number],
+		pointLightEnabled: false,
+		pointLightIntensity: 0.5,
+		pointLightPosition: [-5, 5, 5] as [number, number, number],
+		spotLightEnabled: false,
+		spotLightIntensity: 0.8,
+		spotLightPosition: [0, 10, 0] as [number, number, number],
+		spotLightTarget: [0, 0, 0] as [number, number, number],
+	});
+
+	// Spot light target ref
+	const spotLightTargetRef = React.useRef<THREE.Object3D>(null);
 
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
@@ -61,7 +164,7 @@ const AvatarPreview = () => {
 					{/* 3D Viewer */}
 					<Card className="p-8 border-border/50 bg-card/50 backdrop-blur-sm shadow-premium">
 						<div className="aspect-square bg-muted rounded-lg overflow-hidden mb-4">
-							{currentModel ? (
+							{currentModel && currentModel.url ? (
 								<Canvas
 									camera={{
 										position: [0, 0, 2],
@@ -69,17 +172,54 @@ const AvatarPreview = () => {
 									}}
 									style={{ background: "transparent" }}
 								>
-									<ambientLight intensity={0.5} />
-									<directionalLight
-										position={[10, 10, 5]}
-										intensity={1}
+									<ambientLight
+										intensity={lighting.ambientIntensity}
 									/>
-									<Suspense fallback={null}>
-										<GLBModel
-											url={URL.createObjectURL(
-												currentModel.model
-											)}
+									<directionalLight
+										position={lighting.directionalPosition}
+										intensity={
+											lighting.directionalIntensity
+										}
+									/>
+									{lighting.pointLightEnabled && (
+										<pointLight
+											position={
+												lighting.pointLightPosition
+											}
+											intensity={
+												lighting.pointLightIntensity
+											}
+											color="#ffffff"
 										/>
+									)}
+									{lighting.spotLightEnabled && (
+										<>
+											<spotLight
+												position={
+													lighting.spotLightPosition
+												}
+												intensity={
+													lighting.spotLightIntensity
+												}
+												color="#ffffff"
+												angle={Math.PI / 6}
+												penumbra={0.5}
+												target={
+													spotLightTargetRef.current ||
+													undefined
+												}
+											/>
+											<primitive
+												ref={spotLightTargetRef}
+												object={new THREE.Object3D()}
+												position={
+													lighting.spotLightTarget
+												}
+											/>
+										</>
+									)}
+									<Suspense fallback={null}>
+										<GLBModel url={currentModel.url} />
 									</Suspense>
 									<OrbitControls
 										enablePan={true}
@@ -96,11 +236,14 @@ const AvatarPreview = () => {
 											<Sparkles className="w-16 h-16 text-primary" />
 										</div>
 										<p className="text-sm text-muted-foreground">
-											No 3D model available
+											{currentModel
+												? "Loading 3D model..."
+												: "No 3D model available"}
 										</p>
 										<p className="text-xs text-muted-foreground">
-											Please complete the avatar
-											generation process
+											{currentModel
+												? "Please wait while the model loads"
+												: "Please complete the avatar generation process"}
 										</p>
 									</div>
 								</div>
@@ -307,27 +450,535 @@ const AvatarPreview = () => {
 								)}
 							</div>
 						</Card>
-
 						<Card className="p-6 border-border/50 bg-card/50 backdrop-blur-sm shadow-elegant">
-							<h3 className="font-semibold mb-4 flex items-center gap-2">
-								<Edit className="w-5 h-5 text-primary" />
-								Fine-tune Your Avatar
-							</h3>
-							<p className="text-sm text-muted-foreground mb-4">
-								Want to adjust your measurements? You can edit
-								them anytime.
-							</p>
-							<Button
-								variant="outline"
-								className="w-full"
-								onClick={() =>
-									navigate("/onboarding/body-measures")
-								}
+							<Collapsible
+								open={lightingOpen}
+								onOpenChange={setLightingOpen}
 							>
-								Edit Measurements
-							</Button>
-						</Card>
+								<CollapsibleTrigger asChild>
+									<Button
+										variant="ghost"
+										className="w-full justify-between p-0 h-auto font-semibold mb-4 hover:bg-transparent"
+									>
+										<div className="flex items-center gap-2">
+											<Sun className="w-5 h-5 text-primary" />
+											Lighting Controls
+										</div>
+										<ChevronDown
+											className={`h-4 w-4 transition-transform duration-200 ${
+												lightingOpen
+													? "transform rotate-180"
+													: ""
+											}`}
+										/>
+									</Button>
+								</CollapsibleTrigger>
+								<CollapsibleContent className="space-y-6">
+									{/* Ambient Light */}
+									<div className="space-y-2">
+										<div className="flex items-center justify-between">
+											<Label className="text-sm font-medium">
+												Ambient Light
+											</Label>
+											<span className="text-xs text-muted-foreground">
+												{lighting.ambientIntensity.toFixed(
+													1
+												)}
+											</span>
+										</div>
+										<Slider
+											value={[lighting.ambientIntensity]}
+											onValueChange={([value]) =>
+												setLighting((prev) => ({
+													...prev,
+													ambientIntensity: value,
+												}))
+											}
+											min={0}
+											max={2}
+											step={0.1}
+											className="w-full"
+										/>
+									</div>
 
+									{/* Directional Light */}
+									<div className="space-y-3">
+										<div className="flex items-center justify-between">
+											<Label className="text-sm font-medium">
+												Directional Light
+											</Label>
+											<span className="text-xs text-muted-foreground">
+												{lighting.directionalIntensity.toFixed(
+													1
+												)}
+											</span>
+										</div>
+										<Slider
+											value={[
+												lighting.directionalIntensity,
+											]}
+											onValueChange={([value]) =>
+												setLighting((prev) => ({
+													...prev,
+													directionalIntensity: value,
+												}))
+											}
+											min={0}
+											max={3}
+											step={0.1}
+											className="w-full"
+										/>
+
+										<div className="grid grid-cols-3 gap-2">
+											<div className="space-y-1">
+												<Label className="text-xs text-muted-foreground">
+													X
+												</Label>
+												<Slider
+													value={[
+														lighting
+															.directionalPosition[0],
+													]}
+													onValueChange={([value]) =>
+														setLighting((prev) => ({
+															...prev,
+															directionalPosition:
+																[
+																	value,
+																	prev
+																		.directionalPosition[1],
+																	prev
+																		.directionalPosition[2],
+																],
+														}))
+													}
+													min={-20}
+													max={20}
+													step={1}
+													className="w-full"
+												/>
+											</div>
+											<div className="space-y-1">
+												<Label className="text-xs text-muted-foreground">
+													Y
+												</Label>
+												<Slider
+													value={[
+														lighting
+															.directionalPosition[1],
+													]}
+													onValueChange={([value]) =>
+														setLighting((prev) => ({
+															...prev,
+															directionalPosition:
+																[
+																	prev
+																		.directionalPosition[0],
+																	value,
+																	prev
+																		.directionalPosition[2],
+																],
+														}))
+													}
+													min={-20}
+													max={20}
+													step={1}
+													className="w-full"
+												/>
+											</div>
+											<div className="space-y-1">
+												<Label className="text-xs text-muted-foreground">
+													Z
+												</Label>
+												<Slider
+													value={[
+														lighting
+															.directionalPosition[2],
+													]}
+													onValueChange={([value]) =>
+														setLighting((prev) => ({
+															...prev,
+															directionalPosition:
+																[
+																	prev
+																		.directionalPosition[0],
+																	prev
+																		.directionalPosition[1],
+																	value,
+																],
+														}))
+													}
+													min={-20}
+													max={20}
+													step={1}
+													className="w-full"
+												/>
+											</div>
+										</div>
+									</div>
+
+									{/* Point Light */}
+									<div className="space-y-3 border-t pt-3">
+										<div className="flex items-center justify-between">
+											<div className="flex items-center gap-2">
+												<Lightbulb className="w-4 h-4" />
+												<Label className="text-sm font-medium">
+													Point Light
+												</Label>
+											</div>
+											<Button
+												size="sm"
+												variant={
+													lighting.pointLightEnabled
+														? "default"
+														: "outline"
+												}
+												onClick={() =>
+													setLighting((prev) => ({
+														...prev,
+														pointLightEnabled:
+															!prev.pointLightEnabled,
+													}))
+												}
+												className="h-6 px-2 text-xs"
+											>
+												{lighting.pointLightEnabled
+													? "On"
+													: "Off"}
+											</Button>
+										</div>
+
+										{lighting.pointLightEnabled && (
+											<>
+												<div className="flex items-center justify-between">
+													<Label className="text-xs text-muted-foreground">
+														Intensity
+													</Label>
+													<span className="text-xs text-muted-foreground">
+														{lighting.pointLightIntensity.toFixed(
+															1
+														)}
+													</span>
+												</div>
+												<Slider
+													value={[
+														lighting.pointLightIntensity,
+													]}
+													onValueChange={([value]) =>
+														setLighting((prev) => ({
+															...prev,
+															pointLightIntensity:
+																value,
+														}))
+													}
+													min={0}
+													max={2}
+													step={0.1}
+													className="w-full"
+												/>
+
+												<div className="grid grid-cols-3 gap-2">
+													<div className="space-y-1">
+														<Label className="text-xs text-muted-foreground">
+															X
+														</Label>
+														<Slider
+															value={[
+																lighting
+																	.pointLightPosition[0],
+															]}
+															onValueChange={([
+																value,
+															]) =>
+																setLighting(
+																	(prev) => ({
+																		...prev,
+																		pointLightPosition:
+																			[
+																				value,
+																				prev
+																					.pointLightPosition[1],
+																				prev
+																					.pointLightPosition[2],
+																			],
+																	})
+																)
+															}
+															min={-20}
+															max={20}
+															step={1}
+															className="w-full"
+														/>
+													</div>
+													<div className="space-y-1">
+														<Label className="text-xs text-muted-foreground">
+															Y
+														</Label>
+														<Slider
+															value={[
+																lighting
+																	.pointLightPosition[1],
+															]}
+															onValueChange={([
+																value,
+															]) =>
+																setLighting(
+																	(prev) => ({
+																		...prev,
+																		pointLightPosition:
+																			[
+																				prev
+																					.pointLightPosition[0],
+																				value,
+																				prev
+																					.pointLightPosition[2],
+																			],
+																	})
+																)
+															}
+															min={-20}
+															max={20}
+															step={1}
+															className="w-full"
+														/>
+													</div>
+													<div className="space-y-1">
+														<Label className="text-xs text-muted-foreground">
+															Z
+														</Label>
+														<Slider
+															value={[
+																lighting
+																	.pointLightPosition[2],
+															]}
+															onValueChange={([
+																value,
+															]) =>
+																setLighting(
+																	(prev) => ({
+																		...prev,
+																		pointLightPosition:
+																			[
+																				prev
+																					.pointLightPosition[0],
+																				prev
+																					.pointLightPosition[1],
+																				value,
+																			],
+																	})
+																)
+															}
+															min={-20}
+															max={20}
+															step={1}
+															className="w-full"
+														/>
+													</div>
+												</div>
+											</>
+										)}
+									</div>
+
+									{/* Spot Light */}
+									<div className="space-y-3 border-t pt-3">
+										<div className="flex items-center justify-between">
+											<div className="flex items-center gap-2">
+												<Sun className="w-4 h-4" />
+												<Label className="text-sm font-medium">
+													Spot Light
+												</Label>
+											</div>
+											<Button
+												size="sm"
+												variant={
+													lighting.spotLightEnabled
+														? "default"
+														: "outline"
+												}
+												onClick={() =>
+													setLighting((prev) => ({
+														...prev,
+														spotLightEnabled:
+															!prev.spotLightEnabled,
+													}))
+												}
+												className="h-6 px-2 text-xs"
+											>
+												{lighting.spotLightEnabled
+													? "On"
+													: "Off"}
+											</Button>
+										</div>
+
+										{lighting.spotLightEnabled && (
+											<>
+												<div className="flex items-center justify-between">
+													<Label className="text-xs text-muted-foreground">
+														Intensity
+													</Label>
+													<span className="text-xs text-muted-foreground">
+														{lighting.spotLightIntensity.toFixed(
+															1
+														)}
+													</span>
+												</div>
+												<Slider
+													value={[
+														lighting.spotLightIntensity,
+													]}
+													onValueChange={([value]) =>
+														setLighting((prev) => ({
+															...prev,
+															spotLightIntensity:
+																value,
+														}))
+													}
+													min={0}
+													max={2}
+													step={0.1}
+													className="w-full"
+												/>
+
+												<div className="space-y-2">
+													<Label className="text-xs font-medium">
+														Position
+													</Label>
+													<div className="grid grid-cols-3 gap-2">
+														<div className="space-y-1">
+															<Label className="text-xs text-muted-foreground">
+																X
+															</Label>
+															<Slider
+																value={[
+																	lighting
+																		.spotLightPosition[0],
+																]}
+																onValueChange={([
+																	value,
+																]) =>
+																	setLighting(
+																		(
+																			prev
+																		) => ({
+																			...prev,
+																			spotLightPosition:
+																				[
+																					value,
+																					prev
+																						.spotLightPosition[1],
+																					prev
+																						.spotLightPosition[2],
+																				],
+																		})
+																	)
+																}
+																min={-20}
+																max={20}
+																step={1}
+																className="w-full"
+															/>
+														</div>
+														<div className="space-y-1">
+															<Label className="text-xs text-muted-foreground">
+																Y
+															</Label>
+															<Slider
+																value={[
+																	lighting
+																		.spotLightPosition[1],
+																]}
+																onValueChange={([
+																	value,
+																]) =>
+																	setLighting(
+																		(
+																			prev
+																		) => ({
+																			...prev,
+																			spotLightPosition:
+																				[
+																					prev
+																						.spotLightPosition[0],
+																					value,
+																					prev
+																						.spotLightPosition[2],
+																				],
+																		})
+																	)
+																}
+																min={-20}
+																max={20}
+																step={1}
+																className="w-full"
+															/>
+														</div>
+														<div className="space-y-1">
+															<Label className="text-xs text-muted-foreground">
+																Z
+															</Label>
+															<Slider
+																value={[
+																	lighting
+																		.spotLightPosition[2],
+																]}
+																onValueChange={([
+																	value,
+																]) =>
+																	setLighting(
+																		(
+																			prev
+																		) => ({
+																			...prev,
+																			spotLightPosition:
+																				[
+																					prev
+																						.spotLightPosition[0],
+																					prev
+																						.spotLightPosition[1],
+																					value,
+																				],
+																		})
+																	)
+																}
+																min={-20}
+																max={20}
+																step={1}
+																className="w-full"
+															/>
+														</div>
+													</div>
+												</div>
+											</>
+										)}
+									</div>
+
+									{/* Reset Lighting */}
+									<Button
+										variant="outline"
+										size="sm"
+										onClick={() =>
+											setLighting({
+												ambientIntensity: 1.2,
+												directionalIntensity: 1.0,
+												directionalPosition: [
+													10, 10, 5,
+												],
+												pointLightEnabled: false,
+												pointLightIntensity: 0.5,
+												pointLightPosition: [-5, 5, 5],
+												spotLightEnabled: false,
+												spotLightIntensity: 0.8,
+												spotLightPosition: [0, 10, 0],
+												spotLightTarget: [0, 0, 0],
+											})
+										}
+										className="w-full"
+									>
+										Reset to Default
+									</Button>
+								</CollapsibleContent>
+							</Collapsible>
+						</Card>{" "}
 						<Card className="p-6 border-border/50 bg-card/50 backdrop-blur-sm shadow-elegant">
 							<h3 className="font-semibold mb-2">
 								Avatar Quality
@@ -353,7 +1004,6 @@ const AvatarPreview = () => {
 								</div>
 							</div>
 						</Card>
-
 						<Button
 							size="lg"
 							className="w-full transition-smooth shadow-elegant hover:shadow-premium"

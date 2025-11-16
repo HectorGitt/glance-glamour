@@ -3,15 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-	Collapsible,
-	CollapsibleContent,
-	CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { Sparkles, Settings, ChevronDown, Play } from "lucide-react";
+import { Sparkles, Play } from "lucide-react";
 import { Client } from "@gradio/client";
 import { usePhotoStore } from "@/lib/photoStore";
 import { toast } from "sonner";
@@ -38,6 +30,8 @@ const Processing = () => {
 		addGeneratedModel,
 		facePhotos,
 		getFacePhoto,
+		advancedSettings,
+		setAdvancedSettings,
 	} = usePhotoStore();
 	const [currentStep, setCurrentStep] = useState(0);
 	const [progress, setProgress] = useState(0);
@@ -45,46 +39,12 @@ const Processing = () => {
 	const [isProcessing, setIsProcessing] = useState(false);
 	const [meshStats, setMeshStats] = useState<any>(null);
 
-	// Advanced settings state
-	const [advancedSettings, setAdvancedSettingsState] = useState({
-		generationType: "single" as "single" | "multiview", // 'single' or 'multiview'
-		generateTexture: false,
-		showMeshStats: false,
-		removeBackground: true,
-		randomizeSeed: true,
-		seed: 7056020,
-		inferenceSteps: 30,
-		octreeResolution: 256,
-		guidanceScale: 5,
-		numChunks: 8000,
-	});
-
-	const setAdvancedSettings = (updates: Partial<typeof advancedSettings>) => {
-		setAdvancedSettingsState((prev) => ({ ...prev, ...updates }));
-	};
-
 	const startGeneration = async () => {
-		// Check if we have the required images based on generation type
-		if (advancedSettings.generationType === "single" && !fullBodyPhoto) {
+		// Check if we have the required images for single image generation
+		if (!fullBodyPhoto) {
 			toast.error("No full body photo found. Please upload one first.");
 			navigate("/onboarding/full-body-upload");
 			return;
-		}
-
-		if (advancedSettings.generationType === "multiview") {
-			const availableFacePhotos = facePhotos.length;
-			if (availableFacePhotos === 0) {
-				toast.error(
-					"No face photos found. Please capture face photos first."
-				);
-				navigate("/onboarding/face-photos");
-				return;
-			}
-			if (availableFacePhotos < 2) {
-				toast.error(
-					"At least 2 face photos are recommended for multiview generation."
-				);
-			}
 		}
 
 		setIsProcessing(true);
@@ -103,49 +63,16 @@ const Processing = () => {
 			// Step 2: Uploading image
 			setCurrentStep(1);
 			setProgress(30);
-			toast.info(
-				`Uploading ${
-					advancedSettings.generationType === "multiview"
-						? "face photos"
-						: "image"
-				}...`
-			);
+			toast.info("Uploading your image...");
 
 			// Step 3: Processing image
 			setCurrentStep(2);
 			setProgress(60);
 			toast.info("Generating your 3D avatar...");
 
-			// Prepare images based on generation type
-			let mainImage: Blob;
-			let frontFace = null;
-			let leftFace = null;
-			let rightFace = null;
-			let profileFace = null;
-
-			if (advancedSettings.generationType === "single") {
-				mainImage = fullBodyPhoto!.blob;
-				toast.info("Using single image for generation");
-			} else {
-				// Multiview: use face photos
-				frontFace = getFacePhoto("front");
-				leftFace = getFacePhoto("3/4-left");
-				rightFace = getFacePhoto("3/4-right");
-				profileFace = getFacePhoto("profile");
-
-				// Use the front face as the main image for multiview
-				mainImage = frontFace ? frontFace.blob : facePhotos[0].blob;
-
-				const multiviewCount = [
-					frontFace,
-					leftFace,
-					rightFace,
-					profileFace,
-				].filter(Boolean).length;
-				toast.info(
-					`Using ${multiviewCount} face photos for multiview generation`
-				);
-			}
+			// Prepare images for single image generation
+			const mainImage = fullBodyPhoto!.blob;
+			toast.info("Using single image for generation");
 
 			// Choose API endpoint based on texture generation setting
 			const apiEndpoint = advancedSettings.generateTexture
@@ -153,7 +80,7 @@ const Processing = () => {
 				: "/wrap_shape_generation";
 
 			toast.info(
-				`Generating ${advancedSettings.generationType} ${
+				`Generating single image ${
 					advancedSettings.generateTexture
 						? "mesh with texture"
 						: "mesh only"
@@ -172,23 +99,13 @@ const Processing = () => {
 				check_box_rembg: advancedSettings.removeBackground, // Configurable background removal
 				num_chunks: advancedSettings.numChunks, // Configurable number of chunks
 				randomize_seed: advancedSettings.randomizeSeed, // Use random seed flag
+				// Single image generation parameters
+				image: mainImage,
+				mv_image_front: null,
+				mv_image_back: null,
+				mv_image_left: null,
+				mv_image_right: null,
 			};
-
-			if (advancedSettings.generationType === "single") {
-				// Single image generation - pass main image and set multiview params to null
-				apiParams.image = mainImage;
-				apiParams.mv_image_front = null;
-				apiParams.mv_image_back = null;
-				apiParams.mv_image_left = null;
-				apiParams.mv_image_right = null;
-			} else {
-				// Multiview generation - pass multiview images, no main image
-				apiParams.image = null;
-				apiParams.mv_image_front = frontFace ? frontFace.blob : null;
-				apiParams.mv_image_back = profileFace ? profileFace.blob : null;
-				apiParams.mv_image_left = leftFace ? leftFace.blob : null;
-				apiParams.mv_image_right = rightFace ? rightFace.blob : null;
-			}
 
 			const result = await client.predict(apiEndpoint, apiParams);
 
@@ -202,6 +119,7 @@ const Processing = () => {
 			let modelBlob: Blob;
 			let status: string = "completed";
 			let fileName: string = "generated-model.glb";
+			let downloadUrl: string | null = null;
 
 			if (Array.isArray(result.data) && result.data.length >= 3) {
 				const [stats, seed, downloadUpdate] = result.data;
@@ -231,6 +149,7 @@ const Processing = () => {
 					}
 
 					if (fileUrl) {
+						downloadUrl = fileUrl; // Store the original URL
 						// If it's a URL, download the file
 						if (typeof fileUrl === "string") {
 							if (fileUrl.startsWith("http")) {
@@ -250,6 +169,7 @@ const Processing = () => {
 									/\/$/,
 									""
 								)}${fileUrl}`;
+								downloadUrl = fullUrl; // Store the full URL
 								const response = await fetch(fullUrl);
 								if (!response.ok) {
 									throw new Error(
@@ -310,8 +230,9 @@ const Processing = () => {
 
 			// Store the generated model in the photo store
 			addGeneratedModel({
-				model: modelBlob,
-				generationType: advancedSettings.generationType,
+				blob: modelBlob,
+				downloadUrl: downloadUrl || "", // Store the download URL for persistence
+				generationType: "single",
 				hasTexture: advancedSettings.generateTexture,
 				name: `Avatar ${new Date().toLocaleString()}`,
 			});
@@ -365,109 +286,19 @@ const Processing = () => {
 						</p>
 						{!isProcessing && (
 							<div className="mt-2 text-sm text-muted-foreground">
-								{advancedSettings.generationType ===
-								"single" ? (
-									<span>
-										Using single image generation •{" "}
-										{advancedSettings.generateTexture
-											? "Mesh + Texture"
-											: "Mesh Only"}
-									</span>
-								) : (
-									<span>
-										Using multiview generation with{" "}
-										{facePhotos.length} face photo
-										{facePhotos.length !== 1
-											? "s"
-											: ""} •{" "}
-										{advancedSettings.generateTexture
-											? "Mesh + Texture"
-											: "Mesh Only"}
-									</span>
-								)}
+								<span>
+									Using single image generation •{" "}
+									{advancedSettings.generateTexture
+										? "Mesh + Texture"
+										: "Mesh Only"}
+								</span>
 							</div>
 						)}
 					</div>
 
-					{/* Generation Type Selection */}
+					{/* Generation Quality Selection */}
 					{!isProcessing && (
 						<div className="space-y-4">
-							<div className="border border-border rounded-lg p-6 bg-muted/30">
-								<h3 className="text-lg font-semibold mb-4">
-									Generation Type
-								</h3>
-								<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-									<div
-										className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
-											advancedSettings.generationType ===
-											"single"
-												? "border-primary bg-primary/5"
-												: "border-border hover:border-primary/50"
-										}`}
-										onClick={() =>
-											setAdvancedSettings({
-												generationType: "single",
-											})
-										}
-									>
-										<div className="flex items-center space-x-3">
-											<div
-												className={`w-4 h-4 rounded-full border-2 ${
-													advancedSettings.generationType ===
-													"single"
-														? "border-primary bg-primary"
-														: "border-muted-foreground"
-												}`}
-											></div>
-											<div>
-												<h4 className="font-medium">
-													Single Image
-												</h4>
-												<p className="text-sm text-muted-foreground">
-													Use one full body photo for
-													generation
-												</p>
-											</div>
-										</div>
-									</div>
-
-									<div
-										className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
-											advancedSettings.generationType ===
-											"multiview"
-												? "border-primary bg-primary/5"
-												: "border-border hover:border-primary/50"
-										}`}
-										onClick={() =>
-											setAdvancedSettings({
-												generationType: "multiview",
-											})
-										}
-									>
-										<div className="flex items-center space-x-3">
-											<div
-												className={`w-4 h-4 rounded-full border-2 ${
-													advancedSettings.generationType ===
-													"multiview"
-														? "border-primary bg-primary"
-														: "border-muted-foreground"
-												}`}
-											></div>
-											<div>
-												<h4 className="font-medium">
-													Multiview
-												</h4>
-												<p className="text-sm text-muted-foreground">
-													Use multiple face photos
-													from different angles
-												</p>
-											</div>
-										</div>
-									</div>
-								</div>
-							</div>
-
-							{/* Generation Quality Selection */}
 							<div className="border border-border rounded-lg p-6 bg-muted/30">
 								<h3 className="text-lg font-semibold mb-4">
 									Generation Quality
@@ -538,202 +369,6 @@ const Processing = () => {
 									</div>
 								</div>
 							</div>
-						</div>
-					)}
-
-					{/* Advanced Settings */}
-					{!isProcessing && (
-						<div className="space-y-4">
-							<Collapsible>
-								<CollapsibleTrigger asChild>
-									<Button
-										variant="outline"
-										className="w-full justify-between"
-									>
-										<div className="flex items-center gap-2">
-											<Settings className="w-4 h-4" />
-											Advanced Options
-										</div>
-										<ChevronDown className="w-4 h-4 transition-transform" />
-									</Button>
-								</CollapsibleTrigger>
-								<CollapsibleContent className="space-y-4 mt-4">
-									<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-										<div className="flex items-center space-x-2">
-											<Checkbox
-												id="show-mesh-stats"
-												checked={
-													advancedSettings.showMeshStats
-												}
-												onCheckedChange={(checked) =>
-													setAdvancedSettings({
-														showMeshStats:
-															checked as boolean,
-													})
-												}
-											/>
-											<Label htmlFor="show-mesh-stats">
-												Show Mesh Statistics
-											</Label>
-										</div>
-
-										<div className="flex items-center space-x-2">
-											<Checkbox
-												id="remove-background"
-												checked={
-													advancedSettings.removeBackground
-												}
-												onCheckedChange={(checked) =>
-													setAdvancedSettings({
-														removeBackground:
-															checked as boolean,
-													})
-												}
-											/>
-											<Label htmlFor="remove-background">
-												Remove Background
-											</Label>
-										</div>
-
-										<div className="flex items-center space-x-2">
-											<Checkbox
-												id="randomize-seed"
-												checked={
-													advancedSettings.randomizeSeed
-												}
-												onCheckedChange={(checked) =>
-													setAdvancedSettings({
-														randomizeSeed:
-															checked as boolean,
-													})
-												}
-											/>
-											<Label htmlFor="randomize-seed">
-												Randomize Seed
-											</Label>
-										</div>
-									</div>
-
-									<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-										<div className="space-y-2">
-											<Label htmlFor="seed">Seed</Label>
-											<Input
-												id="seed"
-												type="number"
-												value={advancedSettings.seed}
-												onChange={(e) =>
-													setAdvancedSettings({
-														seed:
-															parseInt(
-																e.target.value
-															) || 0,
-													})
-												}
-												disabled={
-													advancedSettings.randomizeSeed
-												}
-												min="0"
-												max="99999999"
-											/>
-										</div>
-
-										<div className="space-y-2">
-											<Label htmlFor="inference-steps">
-												Inference Steps
-											</Label>
-											<Input
-												id="inference-steps"
-												type="number"
-												value={
-													advancedSettings.inferenceSteps
-												}
-												onChange={(e) =>
-													setAdvancedSettings({
-														inferenceSteps:
-															parseInt(
-																e.target.value
-															) || 1,
-													})
-												}
-												min="1"
-												max="100"
-											/>
-										</div>
-
-										<div className="space-y-2">
-											<Label htmlFor="octree-resolution">
-												Octree Resolution
-											</Label>
-											<Input
-												id="octree-resolution"
-												type="number"
-												value={
-													advancedSettings.octreeResolution
-												}
-												onChange={(e) =>
-													setAdvancedSettings({
-														octreeResolution:
-															parseInt(
-																e.target.value
-															) || 64,
-													})
-												}
-												min="64"
-												max="1024"
-												step="64"
-											/>
-										</div>
-
-										<div className="space-y-2">
-											<Label htmlFor="guidance-scale">
-												Guidance Scale
-											</Label>
-											<Input
-												id="guidance-scale"
-												type="number"
-												value={
-													advancedSettings.guidanceScale
-												}
-												onChange={(e) =>
-													setAdvancedSettings({
-														guidanceScale:
-															parseFloat(
-																e.target.value
-															) || 1,
-													})
-												}
-												min="1"
-												max="20"
-												step="0.1"
-											/>
-										</div>
-
-										<div className="space-y-2 md:col-span-2">
-											<Label htmlFor="num-chunks">
-												Number of Chunks
-											</Label>
-											<Input
-												id="num-chunks"
-												type="number"
-												value={
-													advancedSettings.numChunks
-												}
-												onChange={(e) =>
-													setAdvancedSettings({
-														numChunks:
-															parseInt(
-																e.target.value
-															) || 1000,
-													})
-												}
-												min="1000"
-												max="20000"
-												step="1000"
-											/>
-										</div>
-									</div>
-								</CollapsibleContent>
-							</Collapsible>
 						</div>
 					)}
 

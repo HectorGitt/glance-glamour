@@ -53,6 +53,7 @@ export interface GeneratedModel {
 	id: string;
 	blob: Blob;
 	url: string;
+	downloadUrl: string; // Original download URL for persistence
 	status: string;
 	timestamp: number;
 	generationType: "single" | "multiview";
@@ -309,10 +310,6 @@ export const usePhotoStore = create<PhotoStore>()(
 				set({ generatedModels: [], currentModel: null });
 			},
 
-			getGeneratedModel: (id) => {
-				return get().generatedModels.find((model) => model.id === id);
-			},
-
 			setBodyMeasurements: (measurements) => {
 				set({ bodyMeasurements: measurements });
 			},
@@ -373,12 +370,81 @@ export const usePhotoStore = create<PhotoStore>()(
 			partialize: (state) => ({
 				bodyMeasurements: state.bodyMeasurements,
 				facePhotoMetadata: state.facePhotoMetadata,
+				generatedModels: state.generatedModels.map((model) => ({
+					...model,
+					blob: undefined, // Remove blob from persistence
+					url: undefined, // Remove URL from persistence
+				})),
+				currentModel: state.currentModel
+					? {
+							...state.currentModel,
+							blob: undefined, // Remove blob from persistence
+							url: undefined, // Remove URL from persistence
+					  }
+					: null,
 				advancedSettings: state.advancedSettings,
 				currentStep: state.currentStep,
 				isComplete: state.isComplete,
 				// Note: facePhotos with blob URLs are not persisted
 				// They should be recaptured if needed after app restart
 			}),
+			onRehydrateStorage:
+				() =>
+				(state, { set }) => {
+					// Redownload models from URLs after hydration
+					if (state?.generatedModels) {
+						Promise.all(
+							state.generatedModels.map(async (model) => {
+								try {
+									if (model.downloadUrl) {
+										const response = await fetch(
+											model.downloadUrl
+										);
+										if (response.ok) {
+											const blob = await response.blob();
+											const url =
+												URL.createObjectURL(blob);
+											return {
+												...model,
+												blob,
+												url,
+											};
+										}
+									}
+									return null; // Failed to download
+								} catch (error) {
+									console.error(
+										"Failed to redownload model:",
+										error
+									);
+									return null;
+								}
+							})
+						)
+							.then((redownloadedModels) => {
+								const validModels = redownloadedModels.filter(
+									Boolean
+								) as GeneratedModel[];
+								set({ generatedModels: validModels });
+
+								// Set current model if it exists and was redownloaded
+								if (state.currentModel) {
+									const currentModel = validModels.find(
+										(m) => m.id === state.currentModel!.id
+									);
+									if (currentModel) {
+										set({ currentModel });
+									}
+								}
+							})
+							.catch((error) => {
+								console.error(
+									"Failed to redownload models:",
+									error
+								);
+							});
+					}
+				},
 		}
 	)
 );
