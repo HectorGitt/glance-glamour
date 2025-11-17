@@ -228,14 +228,15 @@ const Processing = () => {
 				);
 			}
 
-			// Store the generated model in the photo store
-			addGeneratedModel({
-				blob: modelBlob,
-				downloadUrl: downloadUrl || "", // Store the download URL for persistence
-				generationType: "single",
-				hasTexture: advancedSettings.generateTexture,
-				name: `Avatar ${new Date().toLocaleString()}`,
-			});
+		// Store the generated model in the photo store
+		addGeneratedModel({
+			blob: modelBlob,
+			downloadUrl: downloadUrl || "", // Store the download URL for persistence
+			generationType: "single",
+			hasTexture: advancedSettings.generateTexture,
+			name: `Avatar ${new Date().toLocaleString()}`,
+			status: "completed",
+		});
 
 			setProgress(100);
 			setComplete(true);

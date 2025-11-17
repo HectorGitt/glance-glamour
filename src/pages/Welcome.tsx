@@ -40,14 +40,14 @@ const Welcome = () => {
           >
             Get Started
           </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            onClick={() => navigate("/signin")}
-            className="border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10 font-normal tracking-wide transition-smooth"
-          >
-            Sign In
-          </Button>
+        <Button
+          size="lg"
+          variant="hero"
+          onClick={() => navigate("/signin")}
+          className="font-normal tracking-wide transition-smooth"
+        >
+          Sign In
+        </Button>
         </div>
 
         {/* Data control note */}
