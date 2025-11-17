@@ -122,15 +122,6 @@ const AvatarPreview = () => {
 	// Lighting collapsible state
 	const [lightingOpen, setLightingOpen] = useState(false);
 
-	// Update spot light target position when it changes
-	React.useEffect(() => {
-		if (spotLightTargetRef.current) {
-			spotLightTargetRef.current.position.set(
-				...lighting.spotLightTarget
-			);
-		}
-	}, [lighting.spotLightTarget]);
-
 	// Lighting controls state
 	const [lighting, setLighting] = useState({
 		ambientIntensity: 1.2,
@@ -147,6 +138,22 @@ const AvatarPreview = () => {
 
 	// Spot light target ref
 	const spotLightTargetRef = React.useRef<THREE.Object3D>(null);
+
+	// Update spot light target position when it changes
+	React.useEffect(() => {
+		if (spotLightTargetRef.current) {
+			spotLightTargetRef.current.position.set(
+				...lighting.spotLightTarget
+			);
+		}
+	}, [lighting.spotLightTarget]);
+
+	// Expression presets
+	const expressions = [
+		{ id: "neutral" as const, label: "Neutral", icon: Meh },
+		{ id: "smile" as const, label: "Smile", icon: Smile },
+		{ id: "editorial" as const, label: "Editorial", icon: Sparkles },
+	];
 
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
