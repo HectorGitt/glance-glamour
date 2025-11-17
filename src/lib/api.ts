@@ -1,10 +1,17 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import { useApiConfig, type ApiEndpoints } from './apiConfig';
 
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 const API_TIMEOUT = 30000; // 30 seconds
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
+
+// Get dynamic endpoint
+const getEndpoint = (key: keyof ApiEndpoints) => {
+  const config = useApiConfig.getState();
+  return config.endpoints[key];
+};
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
@@ -119,7 +126,8 @@ export const api = {
     formData.append('photo', photo);
     formData.append('angle', angle);
     
-    const response = await apiClient.post<ApiResponse<FacePhoto>>('/avatar/photos', formData, {
+    const endpoint = getEndpoint('uploadPhoto');
+    const response = await apiClient.post<ApiResponse<FacePhoto>>(endpoint, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
@@ -168,8 +176,9 @@ export const api = {
   },
 
   // Try on outfit
-  tryOnOutfit: async (avatarId: string, outfitId: string): Promise<ApiResponse<{ imageUrl: string }>> => {
-    const response = await apiClient.post<ApiResponse<{ imageUrl: string }>>('/tryon', {
+  tryOnOutfit: async (avatarId: string, outfitId: string): Promise<ApiResponse<{ imageUrl: string; processingTime?: number }>> => {
+    const endpoint = getEndpoint('tryOn');
+    const response = await apiClient.post<ApiResponse<{ imageUrl: string; processingTime?: number }>>(endpoint, {
       avatarId,
       outfitId,
     });
@@ -178,8 +187,9 @@ export const api = {
 
   // Get outfit suggestions
   getOutfitSuggestions: async (avatarId: string, limit = 3): Promise<ApiResponse<Outfit[]>> => {
-    const response = await apiClient.get<ApiResponse<Outfit[]>>(`/outfits/suggestions`, {
-      params: { avatarId, limit },
+    const endpoint = getEndpoint('catalog');
+    const response = await apiClient.get<ApiResponse<Outfit[]>>(endpoint, {
+      params: { avatarId, limit, suggestions: true },
     });
     return response.data;
   },
@@ -189,7 +199,8 @@ export const api = {
     avatarId: string,
     preferences: StylistRequest
   ): Promise<ApiResponse<StylistRecommendation>> => {
-    const response = await apiClient.post<ApiResponse<StylistRecommendation>>('/stylist/recommendations', {
+    const endpoint = getEndpoint('stylist');
+    const response = await apiClient.post<ApiResponse<StylistRecommendation>>(endpoint, {
       avatarId,
       ...preferences,
     });
@@ -202,7 +213,8 @@ export const api = {
     priceRange?: [number, number];
     search?: string;
   }): Promise<ApiResponse<Outfit[]>> => {
-    const response = await apiClient.get<ApiResponse<Outfit[]>>('/outfits/catalog', {
+    const endpoint = getEndpoint('catalog');
+    const response = await apiClient.get<ApiResponse<Outfit[]>>(endpoint, {
       params: filters,
     });
     return response.data;
