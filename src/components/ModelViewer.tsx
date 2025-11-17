@@ -1,7 +1,7 @@
 import { useRef, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, useGLTF, Environment, Html } from "@react-three/drei";
-import { Group, Mesh, Vector3 } from "three";
+import { Group, Mesh, Vector3, Box3 } from "three";
 import { Loader2 } from "lucide-react";
 
 interface ModelProps {
@@ -23,17 +23,15 @@ function Model({ url }: ModelProps) {
 	useEffect(() => {
 		if (scene && groupRef.current) {
 			// Calculate bounding box to center the model
-			const box = scene.boundingBox;
-			if (box) {
-				const center = box.getCenter(scene.position);
-				scene.position.sub(center);
+			const box = new Box3().setFromObject(scene);
+			const center = box.getCenter(new Vector3());
+			scene.position.sub(center);
 
-				// Scale to fit in view
-				const size = box.getSize(new Vector3());
-				const maxDim = Math.max(size.x, size.y, size.z);
-				const scale = 2 / maxDim;
-				scene.scale.setScalar(scale);
-			}
+			// Scale to fit in view
+			const size = box.getSize(new Vector3());
+			const maxDim = Math.max(size.x, size.y, size.z);
+			const scale = 2 / maxDim;
+			scene.scale.setScalar(scale);
 		}
 	}, [scene]);
 

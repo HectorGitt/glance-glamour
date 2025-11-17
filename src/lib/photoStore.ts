@@ -274,27 +274,28 @@ export const usePhotoStore = create<PhotoStore>()(
 						URL.revokeObjectURL(modelToRemove.url);
 					}
 
-					const newModels = state.generatedModels.filter(
-						(m) => m.id !== id
-					);
-					let newCurrentModel = state.currentModel;
+				const newModels = state.generatedModels.filter(
+					(m) => m.id !== id
+				);
+				let newCurrentModel = state.currentModel;
 
-					// If we're removing the current model, set current to null or the last model
-					if (state.currentModel?.id === id) {
-						newCurrentModel =
-							newModels.length > 0
-								? newModels[newModels.length - 1]
-								: null;
-					}
+				// If the removed model was the current one, set current to null or the first available
+				if (newCurrentModel?.id === id) {
+					newCurrentModel = newModels[0] || null;
+				}
 
-					return {
-						generatedModels: newModels,
-						currentModel: newCurrentModel,
-					};
-				});
-			},
+				return {
+					generatedModels: newModels,
+					currentModel: newCurrentModel,
+				};
+			});
+		},
 
-			renameGeneratedModel: (id, name) => {
+		getGeneratedModel: (id) => {
+			return get().generatedModels.find((m) => m.id === id);
+		},
+
+		renameGeneratedModel: (id, name) => {
 				set((state) => ({
 					generatedModels: state.generatedModels.map((model) =>
 						model.id === id ? { ...model, name } : model
