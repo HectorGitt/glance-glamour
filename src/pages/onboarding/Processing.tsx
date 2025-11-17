@@ -57,7 +57,7 @@ const Processing = () => {
 
 			const gradioUrl =
 				import.meta.env.VITE_GRADIO_API_URL ||
-				"https://31205cad7dd4ba1b91.gradio.live/";
+				"https://84cefae1fbab491cd2.gradio.live/";
 			const client = await Client.connect(gradioUrl);
 
 			// Step 2: Uploading image
