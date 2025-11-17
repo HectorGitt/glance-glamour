@@ -122,7 +122,7 @@ const FacePhotos = () => {
 		};
 	}, [location.pathname, stream]);
 
-	const capturePhoto = (): Blob | null => {
+	const capturePhoto = async (): Promise<Blob | null> => {
 		if (!videoRef.current || !canvasRef.current) return null;
 
 		const video = videoRef.current;
@@ -139,10 +139,14 @@ const FacePhotos = () => {
 		context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
 		// Convert to blob
-		return new Promise((resolve) => {
+		return new Promise<Blob>((resolve, reject) => {
 			canvas.toBlob(
 				(blob) => {
-					resolve(blob);
+					if (blob) {
+						resolve(blob);
+					} else {
+						reject(new Error('Failed to create blob from canvas'));
+					}
 				},
 				"image/jpeg",
 				0.9

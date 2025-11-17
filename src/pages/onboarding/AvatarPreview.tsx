@@ -37,55 +37,55 @@ const GLBModel = ({ url }: { url: string }) => {
 			scene.traverse((child) => {
 				if (child instanceof THREE.Mesh && child.material) {
 					// Ensure material properties are set for texture rendering
-					if (Array.isArray(child.material)) {
-						child.material.forEach((mat) => {
-							if (mat instanceof THREE.MeshStandardMaterial) {
-								// Ensure textures are properly loaded
-								if (mat.map) {
-									mat.map.needsUpdate = true;
-									mat.map.encoding = THREE.sRGBEncoding;
-								}
-								if (mat.normalMap) {
-									mat.normalMap.needsUpdate = true;
-								}
-								if (mat.roughnessMap) {
-									mat.roughnessMap.needsUpdate = true;
-								}
-								if (mat.metalnessMap) {
-									mat.metalnessMap.needsUpdate = true;
-								}
-								if (mat.emissiveMap) {
-									mat.emissiveMap.needsUpdate = true;
-									mat.emissiveMap.encoding =
-										THREE.sRGBEncoding;
-								}
-								mat.needsUpdate = true;
+				if (Array.isArray(child.material)) {
+					child.material.forEach((mat) => {
+						if (mat instanceof THREE.MeshStandardMaterial) {
+							// Ensure textures are properly loaded
+							if (mat.map) {
+								mat.map.needsUpdate = true;
+								mat.map.colorSpace = THREE.SRGBColorSpace;
 							}
-						});
-					} else if (
-						child.material instanceof THREE.MeshStandardMaterial
-					) {
-						// Ensure textures are properly loaded
-						if (child.material.map) {
-							child.material.map.needsUpdate = true;
-							child.material.map.encoding = THREE.sRGBEncoding;
+							if (mat.normalMap) {
+								mat.normalMap.needsUpdate = true;
+							}
+							if (mat.roughnessMap) {
+								mat.roughnessMap.needsUpdate = true;
+							}
+							if (mat.metalnessMap) {
+								mat.metalnessMap.needsUpdate = true;
+							}
+							if (mat.emissiveMap) {
+								mat.emissiveMap.needsUpdate = true;
+								mat.emissiveMap.colorSpace =
+									THREE.SRGBColorSpace;
+							}
+							mat.needsUpdate = true;
 						}
-						if (child.material.normalMap) {
-							child.material.normalMap.needsUpdate = true;
-						}
-						if (child.material.roughnessMap) {
-							child.material.roughnessMap.needsUpdate = true;
-						}
-						if (child.material.metalnessMap) {
-							child.material.metalnessMap.needsUpdate = true;
-						}
-						if (child.material.emissiveMap) {
-							child.material.emissiveMap.needsUpdate = true;
-							child.material.emissiveMap.encoding =
-								THREE.sRGBEncoding;
-						}
-						child.material.needsUpdate = true;
+					});
+				} else if (
+					child.material instanceof THREE.MeshStandardMaterial
+				) {
+					// Ensure textures are properly loaded
+					if (child.material.map) {
+						child.material.map.needsUpdate = true;
+						child.material.map.colorSpace = THREE.SRGBColorSpace;
 					}
+					if (child.material.normalMap) {
+						child.material.normalMap.needsUpdate = true;
+					}
+					if (child.material.roughnessMap) {
+						child.material.roughnessMap.needsUpdate = true;
+					}
+					if (child.material.metalnessMap) {
+						child.material.metalnessMap.needsUpdate = true;
+					}
+					if (child.material.emissiveMap) {
+						child.material.emissiveMap.needsUpdate = true;
+						child.material.emissiveMap.colorSpace =
+							THREE.SRGBColorSpace;
+					}
+					child.material.needsUpdate = true;
+				}
 				}
 			});
 		}
