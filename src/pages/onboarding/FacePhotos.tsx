@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Camera, CheckCircle2, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { usePhotoStore, type PhotoAngle } from "@/lib/photoStore";
 
 const PHOTO_STEPS: { angle: PhotoAngle; label: string; required: boolean }[] = [
@@ -17,7 +17,6 @@ const PHOTO_STEPS: { angle: PhotoAngle; label: string; required: boolean }[] = [
 const FacePhotos = () => {
 	const navigate = useNavigate();
 	const location = useLocation();
-	const { toast } = useToast();
 	const [currentStep, setCurrentStep] = useState(0);
 	const [isCapturing, setIsCapturing] = useState(false);
 	const [stream, setStream] = useState<MediaStream | null>(null);
@@ -55,15 +54,12 @@ const FacePhotos = () => {
 				setCameraError(
 					"Unable to access camera. Please check permissions."
 				);
-				toast({
-					title: "Camera access denied",
+				toast.error("Camera access denied", {
 					description:
 						"Please allow camera access to capture photos.",
-					variant: "destructive",
 				});
 			}
 		};
-
 		initializeCamera();
 
 		return () => {
@@ -145,7 +141,7 @@ const FacePhotos = () => {
 					if (blob) {
 						resolve(blob);
 					} else {
-						reject(new Error('Failed to create blob from canvas'));
+						reject(new Error("Failed to create blob from canvas"));
 					}
 				},
 				"image/jpeg",
@@ -156,14 +152,11 @@ const FacePhotos = () => {
 
 	const handleCapture = async () => {
 		if (!stream || cameraError) {
-			toast({
-				title: "Camera not available",
+			toast.error("Camera not available", {
 				description: "Please check camera permissions and try again.",
-				variant: "destructive",
 			});
 			return;
 		}
-
 		setIsCapturing(true);
 		try {
 			const photoBlob = await capturePhoto();
@@ -179,23 +172,19 @@ const FacePhotos = () => {
 				quality: "good", // For now, assume good quality
 			});
 
-			toast({
-				title: "Photo captured",
+			toast.success("Photo captured", {
 				description: "Great shot! Moving to next angle.",
 			});
 
 			// Update store step
 			setStoreStep(currentStep);
-
 			if (currentStep < PHOTO_STEPS.length - 1) {
 				setCurrentStep((prev) => prev + 1);
 			}
 		} catch (error) {
 			console.error("Capture error:", error);
-			toast({
-				title: "Capture failed",
+			toast.error("Capture failed", {
 				description: "Please try again with better lighting.",
-				variant: "destructive",
 			});
 		} finally {
 			setIsCapturing(false);

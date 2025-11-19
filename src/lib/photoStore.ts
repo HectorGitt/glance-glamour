@@ -61,12 +61,22 @@ export interface GeneratedModel {
 	name?: string; // Optional custom name
 }
 
+export interface UploadedModel {
+	id: string;
+	blob: Blob;
+	url: string;
+	fileName: string;
+	timestamp: number;
+	name?: string; // Optional custom name
+}
+
 export interface OnboardingData {
 	facePhotos: FacePhoto[];
 	bodyMeasurements: BodyMeasurements | null;
 	fullBodyPhoto: FullBodyPhoto | null;
 	generatedModels: GeneratedModel[];
-	currentModel: GeneratedModel | null; // Currently selected/viewed model
+	uploadedModels: UploadedModel[];
+	currentModel: GeneratedModel | UploadedModel | null; // Currently selected/viewed model
 	advancedSettings: AdvancedSettings;
 	currentStep: number;
 	isComplete: boolean;
@@ -92,15 +102,25 @@ interface PhotoStore {
 
 	// Generated models
 	generatedModels: GeneratedModel[];
-	currentModel: GeneratedModel | null;
+	currentModel: GeneratedModel | UploadedModel | null;
 	addGeneratedModel: (
 		model: Omit<GeneratedModel, "id" | "url" | "timestamp">
 	) => void;
-	setCurrentModel: (model: GeneratedModel | null) => void;
+	setCurrentModel: (model: GeneratedModel | UploadedModel | null) => void;
 	removeGeneratedModel: (id: string) => void;
 	renameGeneratedModel: (id: string, name: string) => void;
 	clearGeneratedModels: () => void;
 	getGeneratedModel: (id: string) => GeneratedModel | undefined;
+
+	// Uploaded models
+	uploadedModels: UploadedModel[];
+	addUploadedModel: (
+		model: Omit<UploadedModel, "id" | "url" | "timestamp">
+	) => void;
+	removeUploadedModel: (id: string) => void;
+	renameUploadedModel: (id: string, name: string) => void;
+	clearUploadedModels: () => void;
+	getUploadedModel: (id: string) => UploadedModel | undefined;
 
 	// Body measurements
 	bodyMeasurements: BodyMeasurements | null;
@@ -127,6 +147,7 @@ const initialState = {
 	facePhotoMetadata: [],
 	fullBodyPhoto: null,
 	generatedModels: [],
+	uploadedModels: [],
 	currentModel: null,
 	bodyMeasurements: null,
 	advancedSettings: {
@@ -274,28 +295,28 @@ export const usePhotoStore = create<PhotoStore>()(
 						URL.revokeObjectURL(modelToRemove.url);
 					}
 
-				const newModels = state.generatedModels.filter(
-					(m) => m.id !== id
-				);
-				let newCurrentModel = state.currentModel;
+					const newModels = state.generatedModels.filter(
+						(m) => m.id !== id
+					);
+					let newCurrentModel = state.currentModel;
 
-				// If the removed model was the current one, set current to null or the first available
-				if (newCurrentModel?.id === id) {
-					newCurrentModel = newModels[0] || null;
-				}
+					// If the removed model was the current one, set current to null or the first available
+					if (newCurrentModel?.id === id) {
+						newCurrentModel = newModels[0] || null;
+					}
 
-				return {
-					generatedModels: newModels,
-					currentModel: newCurrentModel,
-				};
-			});
-		},
+					return {
+						generatedModels: newModels,
+						currentModel: newCurrentModel,
+					};
+				});
+			},
 
-		getGeneratedModel: (id) => {
-			return get().generatedModels.find((m) => m.id === id);
-		},
+			getGeneratedModel: (id) => {
+				return get().generatedModels.find((m) => m.id === id);
+			},
 
-		renameGeneratedModel: (id, name) => {
+			renameGeneratedModel: (id, name) => {
 				set((state) => ({
 					generatedModels: state.generatedModels.map((model) =>
 						model.id === id ? { ...model, name } : model
@@ -309,6 +330,75 @@ export const usePhotoStore = create<PhotoStore>()(
 					URL.revokeObjectURL(model.url);
 				});
 				set({ generatedModels: [], currentModel: null });
+			},
+
+			addUploadedModel: (modelData) => {
+				const id = `uploaded-model-${Date.now()}`;
+				const url = URL.createObjectURL(modelData.blob);
+				const model: UploadedModel = {
+					...modelData,
+					id,
+					url,
+					timestamp: Date.now(),
+				};
+
+				set((state) => ({
+					uploadedModels: [...state.uploadedModels, model],
+					currentModel: model, // Set as current model
+				}));
+			},
+
+			removeUploadedModel: (id) => {
+				set((state) => {
+					const modelToRemove = state.uploadedModels.find(
+						(m) => m.id === id
+					);
+					if (modelToRemove) {
+						URL.revokeObjectURL(modelToRemove.url);
+					}
+
+					const newModels = state.uploadedModels.filter(
+						(m) => m.id !== id
+					);
+					let newCurrentModel = state.currentModel;
+
+					// If we're removing the current model, set current to null or the last model
+					if (state.currentModel?.id === id) {
+						newCurrentModel =
+							newModels.length > 0
+								? newModels[newModels.length - 1]
+								: state.generatedModels.length > 0
+								? state.generatedModels[
+										state.generatedModels.length - 1
+								  ]
+								: null;
+					}
+
+					return {
+						uploadedModels: newModels,
+						currentModel: newCurrentModel,
+					};
+				});
+			},
+
+			renameUploadedModel: (id, name) => {
+				set((state) => ({
+					uploadedModels: state.uploadedModels.map((model) =>
+						model.id === id ? { ...model, name } : model
+					),
+				}));
+			},
+
+			clearUploadedModels: () => {
+				// Clean up blob URLs
+				get().uploadedModels.forEach((model) => {
+					URL.revokeObjectURL(model.url);
+				});
+				set({ uploadedModels: [] });
+			},
+
+			getUploadedModel: (id) => {
+				return get().uploadedModels.find((m) => m.id === id);
 			},
 
 			setBodyMeasurements: (measurements) => {
@@ -348,6 +438,9 @@ export const usePhotoStore = create<PhotoStore>()(
 				get().generatedModels.forEach((model) => {
 					URL.revokeObjectURL(model.url);
 				});
+				get().uploadedModels.forEach((model) => {
+					URL.revokeObjectURL(model.url);
+				});
 				set(initialState);
 			},
 
@@ -358,6 +451,7 @@ export const usePhotoStore = create<PhotoStore>()(
 					bodyMeasurements: state.bodyMeasurements,
 					fullBodyPhoto: state.fullBodyPhoto,
 					generatedModels: state.generatedModels,
+					uploadedModels: state.uploadedModels,
 					currentModel: state.currentModel,
 					advancedSettings: state.advancedSettings,
 					currentStep: state.currentStep,
@@ -372,6 +466,11 @@ export const usePhotoStore = create<PhotoStore>()(
 				bodyMeasurements: state.bodyMeasurements,
 				facePhotoMetadata: state.facePhotoMetadata,
 				generatedModels: state.generatedModels.map((model) => ({
+					...model,
+					blob: undefined, // Remove blob from persistence
+					url: undefined, // Remove URL from persistence
+				})),
+				uploadedModels: state.uploadedModels.map((model) => ({
 					...model,
 					blob: undefined, // Remove blob from persistence
 					url: undefined, // Remove URL from persistence

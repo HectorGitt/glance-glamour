@@ -7,12 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Ruler, HelpCircle } from "lucide-react";
 import { api } from "@/lib/api";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { usePhotoStore } from "@/lib/photoStore";
 
 const BodyMeasures = () => {
 	const navigate = useNavigate();
-	const { toast } = useToast();
 	const { setBodyMeasurements, bodyMeasurements: savedMeasurements } =
 		usePhotoStore();
 	const [unit, setUnit] = useState<"cm" | "in">("cm");
@@ -47,15 +46,12 @@ const BodyMeasures = () => {
 
 	const handleEstimate = async () => {
 		if (!measures.height) {
-			toast({
-				title: "Height required",
+			toast.error("Height required", {
 				description:
 					"Please enter your height to estimate other measurements.",
-				variant: "destructive",
 			});
 			return;
 		}
-
 		try {
 			const response = await api.estimateMeasures(
 				parseFloat(measures.height),
@@ -70,32 +66,25 @@ const BodyMeasures = () => {
 					shoulder: response.data.shoulder.toString(),
 					inseam: response.data.inseam.toString(),
 				});
-				toast({
-					title: "Measurements estimated",
+				toast.success("Measurements estimated", {
 					description: "Feel free to adjust the values as needed.",
 				});
 			}
 		} catch (error) {
-			toast({
-				title: "Estimation failed",
+			toast.error("Estimation failed", {
 				description: "Please enter measurements manually.",
-				variant: "destructive",
 			});
 		}
 	};
-
 	const handleSubmit = async () => {
 		const allFilled = Object.values(measures).every((v) => v);
 		if (!allFilled) {
-			toast({
-				title: "All fields required",
+			toast.error("All fields required", {
 				description:
 					"Please fill in all measurements or use the estimate feature.",
-				variant: "destructive",
 			});
 			return;
 		}
-
 		setIsSubmitting(true);
 		try {
 			// Save measurements to store
@@ -116,16 +105,13 @@ const BodyMeasures = () => {
 
 			navigate("/onboarding/full-body-upload");
 		} catch (error) {
-			toast({
-				title: "Submission failed",
+			toast.error("Submission failed", {
 				description: "Please try again.",
-				variant: "destructive",
 			});
 		} finally {
 			setIsSubmitting(false);
 		}
 	};
-
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
 			<div className="container max-w-2xl mx-auto px-4 py-12">
