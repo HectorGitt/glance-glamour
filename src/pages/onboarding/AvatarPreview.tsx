@@ -25,7 +25,7 @@ function GLBModel({ url }: { url: string }) {
 					["map", "emissiveMap"].forEach((k) => {
 						const tex = mat[k];
 						if (tex && tex.isTexture) {
-							tex.encoding = THREE.sRGBEncoding;
+							tex.colorSpace = THREE.SRGBColorSpace;
 							tex.needsUpdate = true;
 						}
 					});
@@ -140,7 +140,7 @@ const AvatarPreview: React.FC = () => {
 
 					<div className="flex flex-col gap-2">
 						<Button
-							onClick={() => navigate("/tryon")}
+							onClick={() => navigate("/try-on")}
 							className="w-full"
 						>
 							Start Trying On

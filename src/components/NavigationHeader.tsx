@@ -13,19 +13,25 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/lib/authStore";
 
 const NavigationHeader = () => {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+	const { user, logout } = useAuthStore();
 
-	// Mock user data - in real app this would come from auth context
-	const user = {
-		name: "Alex Johnson",
-		email: "alex@example.com",
-		avatar: null,
-		initials: "AJ",
-	};
+	// Format user data for display
+	const userData = user
+		? {
+				name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+				email: user.email || "",
+				avatar: null, // API doesn't provide avatar URL yet
+				initials: `${(user.firstName || "")[0] || "?"}${
+					(user.lastName || "")[0] || ""
+				}`,
+		  }
+		: null;
 
 	const navigationItems = [
 		{ path: "/dashboard", label: "Dashboard", icon: Home },
@@ -66,8 +72,8 @@ const NavigationHeader = () => {
 
 	const breadcrumbs = getBreadcrumbs();
 
-	const handleSignOut = () => {
-		// In real app, this would clear auth tokens and redirect to sign-in
+	const handleSignOut = async () => {
+		await logout();
 		navigate("/");
 	};
 
@@ -86,7 +92,7 @@ const NavigationHeader = () => {
 								<User className="w-5 h-5 text-primary-foreground" />
 							</div>
 							<span className="font-bold text-xl bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-								Glance Glamour
+								Avera
 							</span>
 						</Link>
 
@@ -158,31 +164,43 @@ const NavigationHeader = () => {
 						</Button>
 
 						{/* User Avatar & Menu */}
-						<div className="flex items-center space-x-2">
-							<Avatar className="w-8 h-8">
-								<AvatarImage src={user.avatar || undefined} />
-								<AvatarFallback className="text-xs">
-									{user.initials}
-								</AvatarFallback>
-							</Avatar>
-							<div className="hidden sm:block text-left">
-								<p className="text-sm font-medium">
-									{user.name}
-								</p>
-								<p className="text-xs text-muted-foreground">
-									{user.email}
-								</p>
+						{userData ? (
+							<div className="flex items-center space-x-2">
+								<Avatar className="w-8 h-8">
+									<AvatarImage
+										src={userData.avatar || undefined}
+									/>
+									<AvatarFallback className="text-xs">
+										{userData.initials}
+									</AvatarFallback>
+								</Avatar>
+								<div className="hidden sm:block text-left">
+									<p className="text-sm font-medium">
+										{userData.name}
+									</p>
+									<p className="text-xs text-muted-foreground">
+										{userData.email}
+									</p>
+								</div>
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={handleSignOut}
+									className="text-muted-foreground hover:text-destructive"
+								>
+									<LogOut className="w-4 h-4" />
+									<span className="sr-only">Sign out</span>
+								</Button>
 							</div>
+						) : (
 							<Button
-								variant="ghost"
+								variant="outline"
 								size="sm"
-								onClick={handleSignOut}
-								className="text-muted-foreground hover:text-destructive"
+								onClick={() => navigate("/login")}
 							>
-								<LogOut className="w-4 h-4" />
-								<span className="sr-only">Sign out</span>
+								Sign In
 							</Button>
-						</div>
+						)}
 
 						{/* Mobile Menu Button */}
 						<Button

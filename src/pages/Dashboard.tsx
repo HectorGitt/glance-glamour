@@ -83,7 +83,7 @@ const Dashboard = () => {
 								)}
 								<Button
 									className="w-full"
-									onClick={() => navigate("/tryon")}
+									onClick={() => navigate("/try-on")}
 									disabled={!hasModels}
 								>
 									{hasModels
@@ -119,7 +119,7 @@ const Dashboard = () => {
 								<Button
 									variant="outline"
 									className="w-full"
-									onClick={() => navigate("/models/upload")}
+									onClick={() => navigate("/try-on")}
 								>
 									Upload Model
 								</Button>
@@ -347,7 +347,7 @@ const Dashboard = () => {
 									</p>
 								</div>
 							</div>
-							<Button onClick={() => navigate("/stylist")}>
+							<Button onClick={() => navigate("/try-on")}>
 								Get Recommendations
 							</Button>
 						</div>

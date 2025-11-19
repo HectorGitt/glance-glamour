@@ -14,35 +14,46 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { useAuthStore } from "@/lib/authStore";
 import { toast } from "sonner";
 
-const SignIn = () => {
+const SignUp = () => {
 	const navigate = useNavigate();
-	const { login, isLoading, error, clearError } = useAuthStore();
-	const [email, setEmail] = useState("");
-	const [password, setPassword] = useState("");
+	const { register, isLoading, error, clearError } = useAuthStore();
+
+	const [formData, setFormData] = useState({
+		email: "",
+		password: "",
+		firstName: "",
+		lastName: "",
+		dateOfBirth: "",
+	});
+
+	const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const { name, value } = e.target;
+		setFormData((prev) => ({
+			...prev,
+			[name]: value,
+		}));
+		// Clear error when user starts typing
+		if (error) clearError();
+	};
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
-		try {
-			await login(email, password);
 
-			toast.success("Welcome back!", {
-				description: "You've been signed in successfully.",
+		try {
+			await register(formData);
+
+			toast.success("Account created successfully!", {
+				description: `Welcome ${formData.firstName}!`,
 			});
 
 			navigate("/dashboard");
 		} catch (error) {
-			toast.error("Sign in failed", {
-				description: "Please check your credentials and try again.",
+			// Error is already handled by the store
+			toast.error("Registration failed", {
+				description: "Please check your information and try again.",
 			});
 		}
 	};
-
-	const handleInputChange =
-		(setter: (value: string) => void) =>
-		(e: React.ChangeEvent<HTMLInputElement>) => {
-			setter(e.target.value);
-			if (error) clearError();
-		};
 
 	return (
 		<div className="min-h-screen bg-gradient-hero flex items-center justify-center p-6">
@@ -59,33 +70,81 @@ const SignIn = () => {
 				<Card className="border-border/50 bg-card/95 backdrop-blur-sm shadow-premium">
 					<CardHeader>
 						<CardTitle className="text-2xl font-light">
-							Welcome Back
+							Create Account
 						</CardTitle>
 						<CardDescription>
-							Sign in to your account to continue.
+							Join Glance & Glamour to start your virtual try-on
+							journey.
 						</CardDescription>
 					</CardHeader>
 					<CardContent>
 						<form onSubmit={handleSubmit} className="space-y-4">
+							<div className="grid grid-cols-2 gap-4">
+								<div>
+									<Label htmlFor="firstName">
+										First Name
+									</Label>
+									<Input
+										id="firstName"
+										name="firstName"
+										type="text"
+										value={formData.firstName}
+										onChange={handleChange}
+										placeholder="John"
+										required
+									/>
+								</div>
+								<div>
+									<Label htmlFor="lastName">Last Name</Label>
+									<Input
+										id="lastName"
+										name="lastName"
+										type="text"
+										value={formData.lastName}
+										onChange={handleChange}
+										placeholder="Doe"
+										required
+									/>
+								</div>
+							</div>
+
 							<div>
 								<Label htmlFor="email">Email</Label>
 								<Input
 									id="email"
+									name="email"
 									type="email"
-									value={email}
-									onChange={handleInputChange(setEmail)}
+									value={formData.email}
+									onChange={handleChange}
 									placeholder="you@example.com"
 									required
 								/>
 							</div>
+
 							<div>
 								<Label htmlFor="password">Password</Label>
 								<Input
 									id="password"
+									name="password"
 									type="password"
-									value={password}
-									onChange={handleInputChange(setPassword)}
+									value={formData.password}
+									onChange={handleChange}
 									placeholder="••••••••"
+									required
+									minLength={8}
+								/>
+							</div>
+
+							<div>
+								<Label htmlFor="dateOfBirth">
+									Date of Birth
+								</Label>
+								<Input
+									id="dateOfBirth"
+									name="dateOfBirth"
+									type="date"
+									value={formData.dateOfBirth}
+									onChange={handleChange}
 									required
 								/>
 							</div>
@@ -95,6 +154,7 @@ const SignIn = () => {
 									{error}
 								</div>
 							)}
+
 							<Button
 								type="submit"
 								className="w-full transition-smooth shadow-elegant"
@@ -103,19 +163,20 @@ const SignIn = () => {
 								{isLoading ? (
 									<>
 										<Loader2 className="w-4 h-4 mr-2 animate-spin" />
-										Signing In...
+										Creating Account...
 									</>
 								) : (
-									"Sign In"
+									"Create Account"
 								)}
 							</Button>
 						</form>
+
 						<div className="mt-4 text-center">
 							<button
-								onClick={() => navigate("/signup")}
+								onClick={() => navigate("/login")}
 								className="text-sm text-accent hover:underline"
 							>
-								Don't have an account? Sign up
+								Already have an account? Sign in
 							</button>
 						</div>
 					</CardContent>
@@ -125,4 +186,4 @@ const SignIn = () => {
 	);
 };
 
-export default SignIn;
+export default SignUp;

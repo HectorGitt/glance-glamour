@@ -16,9 +16,11 @@ import { Download, Trash2, ArrowLeft, Shield } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { useApiErrorHandler } from "@/hooks/use-api-error";
 
 const DataControls = () => {
 	const navigate = useNavigate();
+	const { handleError } = useApiErrorHandler();
 	const [isDeleting, setIsDeleting] = useState(false);
 	const [isExporting, setIsExporting] = useState(false);
 
@@ -39,9 +41,7 @@ const DataControls = () => {
 				description: "Your data has been downloaded.",
 			});
 		} catch (error) {
-			toast.error("Export failed", {
-				description: "Please try again later.",
-			});
+			handleError(error, "Exporting data");
 		} finally {
 			setIsExporting(false);
 		}
@@ -56,9 +56,7 @@ const DataControls = () => {
 			});
 			setTimeout(() => navigate("/"), 2000);
 		} catch (error) {
-			toast.error("Deletion failed", {
-				description: "Please try again later.",
-			});
+			handleError(error, "Deleting data");
 		} finally {
 			setIsDeleting(false);
 		}

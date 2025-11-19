@@ -15,73 +15,14 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { ApiSettings } from "@/components/ApiSettings";
 import { usePhotoStore } from "@/lib/photoStore";
-
-// Import outfit images
-import summerCasualImg from "@/assets/outfits/summer-casual.jpg";
-import businessProfessionalImg from "@/assets/outfits/business-professional.jpg";
-import eveningEleganceImg from "@/assets/outfits/evening-elegance.jpg";
-import urbanComfortImg from "@/assets/outfits/urban-comfort.jpg";
-import smartCasualImg from "@/assets/outfits/smart-casual.jpg";
-import floralSummerImg from "@/assets/outfits/floral-summer.jpg";
-
-const OUTFIT_CATALOG = [
-	{
-		id: "1",
-		name: "Summer Casual",
-		category: "Casual",
-		price: 129,
-		imageUrl: summerCasualImg,
-		description: "Comfortable white tee with classic denim",
-	},
-	{
-		id: "2",
-		name: "Business Professional",
-		category: "Formal",
-		price: 299,
-		imageUrl: businessProfessionalImg,
-		description: "Elegant navy suit for the boardroom",
-	},
-	{
-		id: "3",
-		name: "Evening Elegance",
-		category: "Evening",
-		price: 459,
-		imageUrl: eveningEleganceImg,
-		description: "Luxurious black dress for special occasions",
-	},
-	{
-		id: "4",
-		name: "Urban Comfort",
-		category: "Streetwear",
-		price: 189,
-		imageUrl: urbanComfortImg,
-		description: "Modern hoodie and joggers set",
-	},
-	{
-		id: "5",
-		name: "Smart Casual",
-		category: "Business Casual",
-		price: 249,
-		imageUrl: smartCasualImg,
-		description: "Beige blazer with tailored trousers",
-	},
-	{
-		id: "6",
-		name: "Floral Summer",
-		category: "Summer",
-		price: 169,
-		imageUrl: floralSummerImg,
-		description: "Vibrant floral dress for sunny days",
-	},
-];
+import { useApiDataStore } from "@/lib/apiDataStore";
+import { useApiErrorHandler } from "@/hooks/use-api-error";
 
 const TryOn = () => {
 	const navigate = useNavigate();
-	const [selectedOutfit, setSelectedOutfit] = useState(OUTFIT_CATALOG[0]);
-	const [outfitCatalog, setOutfitCatalog] = useState([]);
-	const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
+	const { handleError } = useApiErrorHandler();
+	const [selectedOutfit, setSelectedOutfit] = useState(null);
 	const [isLoading, setIsLoading] = useState(false);
 	const [tryOnResult, setTryOnResult] = useState<string | null>(null);
 
@@ -95,30 +36,20 @@ const TryOn = () => {
 		removeGeneratedModel,
 	} = usePhotoStore();
 
-	// Load outfit catalog from API
-	useEffect(() => {
-		const loadCatalog = async () => {
-			try {
-				const response = await api.getClothingCatalog({ limit: 20 });
-				const catalog = response.data;
-				setOutfitCatalog(catalog);
-				if (catalog.length > 0) {
-					setSelectedOutfit(catalog[0]);
-				}
-			} catch (error) {
-				console.error("Failed to load catalog:", error);
-				// Fallback to static catalog
-				setOutfitCatalog(OUTFIT_CATALOG);
-				toast.error("Failed to load catalog", {
-					description: "Using demo catalog. Check API configuration.",
-				});
-			} finally {
-				setIsLoadingCatalog(false);
-			}
-		};
+	const {
+		userModels,
+		clothingCatalog,
+		modelsLoading,
+		clothingLoading,
+		loadUserModels,
+		loadClothingCatalog,
+	} = useApiDataStore();
 
-		loadCatalog();
-	}, []);
+	// Load data from API on component mount
+	useEffect(() => {
+		loadUserModels();
+		loadClothingCatalog({ limit: 20 });
+	}, [loadUserModels, loadClothingCatalog]);
 
 	const handleTryOn = async () => {
 		if (!currentModel) {
@@ -182,11 +113,7 @@ const TryOn = () => {
 
 			setTimeout(pollResult, 1000);
 		} catch (error) {
-			console.error("Try-on error:", error);
-			toast.error("Try-on failed", {
-				description:
-					"Please check your API configuration and try again.",
-			});
+			handleError(error, "Virtual try-on");
 			setIsLoading(false);
 		}
 	};
@@ -220,11 +147,7 @@ const TryOn = () => {
 				description: `Found ${recommendations.looks.length} perfect looks for you!`,
 			});
 		} catch (error) {
-			console.error("Stylist error:", error);
-			toast.error("Failed to get recommendations", {
-				description:
-					"Please check your API configuration and try again.",
-			});
+			handleError(error, "Getting stylist recommendations");
 		}
 	};
 
@@ -278,11 +201,7 @@ const TryOn = () => {
 
 			toast.success("Model uploaded successfully!");
 		} catch (error) {
-			console.error("Upload error:", error);
-			toast.error("Failed to upload model", {
-				description:
-					"Please check your API configuration and try again.",
-			});
+			handleError(error, "Uploading model");
 		}
 
 		// Reset the input
@@ -293,16 +212,13 @@ const TryOn = () => {
 		<div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
 			<div className="container max-w-7xl mx-auto px-4 py-8">
 				{/* Header */}
-				<div className="flex items-center justify-between mb-8">
-					<div className="text-center flex-1">
-						<h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-							Virtual Try-On
-						</h1>
-						<p className="text-muted-foreground text-lg">
-							Five seconds per look. More time for you.
-						</p>
-					</div>
-					<ApiSettings />
+				<div className="text-center mb-8">
+					<h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+						Virtual Try-On
+					</h1>
+					<p className="text-muted-foreground text-lg">
+						Five seconds per look. More time for you.
+					</p>
 				</div>
 
 				<div className="grid lg:grid-cols-3 gap-8">
@@ -715,7 +631,7 @@ const TryOn = () => {
 							Outfit Catalog
 						</h3>
 						<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-							{outfitCatalog.map((outfit) => (
+							{clothingCatalog.map((outfit) => (
 								<button
 									key={outfit.id}
 									onClick={() => setSelectedOutfit(outfit)}
@@ -727,7 +643,7 @@ const TryOn = () => {
 								>
 									<div className="aspect-[3/4] bg-muted overflow-hidden">
 										<img
-											src={outfit.imageUrl}
+											src={outfit.images.front}
 											alt={outfit.name}
 											className="w-full h-full object-cover group-hover:scale-105 transition-transform"
 										/>

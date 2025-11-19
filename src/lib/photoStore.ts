@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 export type PhotoAngle = "front" | "3/4-left" | "3/4-right" | "profile";
 
@@ -166,385 +165,282 @@ const initialState = {
 	isComplete: false,
 };
 
-export const usePhotoStore = create<PhotoStore>()(
-	persist(
-		(set, get) => ({
-			...initialState,
+export const usePhotoStore = create<PhotoStore>()((set, get) => ({
+	...initialState,
 
-			addFacePhoto: (photoData) => {
-				const id = `${photoData.angle}-${Date.now()}`;
-				const url = URL.createObjectURL(photoData.blob);
-				const photo: FacePhoto = {
-					...photoData,
-					id,
-					url,
-					timestamp: Date.now(),
-				};
+	addFacePhoto: (photoData) => {
+		const id = `${photoData.angle}-${Date.now()}`;
+		const url = URL.createObjectURL(photoData.blob);
+		const photo: FacePhoto = {
+			...photoData,
+			id,
+			url,
+			timestamp: Date.now(),
+		};
 
-				// Store metadata for persistence
-				const metadata: FacePhotoMetadata = {
-					angle: photoData.angle,
-					quality: photoData.quality,
-					timestamp: Date.now(),
-					captured: true,
-				};
+		// Store metadata for persistence
+		const metadata: FacePhotoMetadata = {
+			angle: photoData.angle,
+			quality: photoData.quality,
+			timestamp: Date.now(),
+			captured: true,
+		};
 
-				set((state) => ({
-					facePhotos: [
-						...state.facePhotos.filter(
-							(p) => p.angle !== photoData.angle
-						),
-						photo,
-					],
-					facePhotoMetadata: [
-						...state.facePhotoMetadata.filter(
-							(m) => m.angle !== photoData.angle
-						),
-						metadata,
-					],
-				}));
-			},
+		set((state) => ({
+			facePhotos: [
+				...state.facePhotos.filter((p) => p.angle !== photoData.angle),
+				photo,
+			],
+			facePhotoMetadata: [
+				...state.facePhotoMetadata.filter(
+					(m) => m.angle !== photoData.angle
+				),
+				metadata,
+			],
+		}));
+	},
 
-			updateFacePhoto: (id, updates) => {
-				set((state) => ({
-					facePhotos: state.facePhotos.map((photo) =>
-						photo.id === id ? { ...photo, ...updates } : photo
-					),
-				}));
-			},
+	updateFacePhoto: (id, updates) => {
+		set((state) => ({
+			facePhotos: state.facePhotos.map((photo) =>
+				photo.id === id ? { ...photo, ...updates } : photo
+			),
+		}));
+	},
 
-			removeFacePhoto: (id) => {
-				set((state) => ({
-					facePhotos: state.facePhotos.filter(
-						(photo) => photo.id !== id
-					),
-				}));
-			},
+	removeFacePhoto: (id) => {
+		set((state) => ({
+			facePhotos: state.facePhotos.filter((photo) => photo.id !== id),
+		}));
+	},
 
-			getFacePhoto: (angle) => {
-				return get().facePhotos.find((photo) => photo.angle === angle);
-			},
+	getFacePhoto: (angle) => {
+		return get().facePhotos.find((photo) => photo.angle === angle);
+	},
 
-			getFacePhotoMetadata: (angle) => {
-				return get().facePhotoMetadata.find(
-					(meta) => meta.angle === angle
-				);
-			},
+	getFacePhotoMetadata: (angle) => {
+		return get().facePhotoMetadata.find((meta) => meta.angle === angle);
+	},
 
-			clearFacePhotos: () => {
-				// Clean up blob URLs
-				get().facePhotos.forEach((photo) => {
-					URL.revokeObjectURL(photo.url);
-				});
-				set({ facePhotos: [], facePhotoMetadata: [] });
-			},
+	clearFacePhotos: () => {
+		// Clean up blob URLs
+		get().facePhotos.forEach((photo) => {
+			URL.revokeObjectURL(photo.url);
+		});
+		set({ facePhotos: [], facePhotoMetadata: [] });
+	},
 
-			setFullBodyPhoto: (photoData) => {
-				const id = `full-body-${Date.now()}`;
-				const url = URL.createObjectURL(photoData.blob);
-				const photo: FullBodyPhoto = {
-					...photoData,
-					id,
-					url,
-					timestamp: Date.now(),
-				};
+	setFullBodyPhoto: (photoData) => {
+		const id = `full-body-${Date.now()}`;
+		const url = URL.createObjectURL(photoData.blob);
+		const photo: FullBodyPhoto = {
+			...photoData,
+			id,
+			url,
+			timestamp: Date.now(),
+		};
 
-				// Clean up previous full body photo if exists
-				const currentPhoto = get().fullBodyPhoto;
-				if (currentPhoto) {
-					URL.revokeObjectURL(currentPhoto.url);
-				}
-
-				set({ fullBodyPhoto: photo });
-			},
-
-			clearFullBodyPhoto: () => {
-				const currentPhoto = get().fullBodyPhoto;
-				if (currentPhoto) {
-					URL.revokeObjectURL(currentPhoto.url);
-				}
-				set({ fullBodyPhoto: null });
-			},
-
-			addGeneratedModel: (modelData) => {
-				const id = `generated-model-${Date.now()}`;
-				const url = URL.createObjectURL(modelData.blob);
-				const model: GeneratedModel = {
-					...modelData,
-					id,
-					url,
-					timestamp: Date.now(),
-				};
-
-				set((state) => ({
-					generatedModels: [...state.generatedModels, model],
-					currentModel: model, // Set as current model
-				}));
-			},
-
-			setCurrentModel: (model) => {
-				set({ currentModel: model });
-			},
-
-			removeGeneratedModel: (id) => {
-				set((state) => {
-					const modelToRemove = state.generatedModels.find(
-						(m) => m.id === id
-					);
-					if (modelToRemove) {
-						URL.revokeObjectURL(modelToRemove.url);
-					}
-
-					const newModels = state.generatedModels.filter(
-						(m) => m.id !== id
-					);
-					let newCurrentModel = state.currentModel;
-
-					// If the removed model was the current one, set current to null or the first available
-					if (newCurrentModel?.id === id) {
-						newCurrentModel = newModels[0] || null;
-					}
-
-					return {
-						generatedModels: newModels,
-						currentModel: newCurrentModel,
-					};
-				});
-			},
-
-			getGeneratedModel: (id) => {
-				return get().generatedModels.find((m) => m.id === id);
-			},
-
-			renameGeneratedModel: (id, name) => {
-				set((state) => ({
-					generatedModels: state.generatedModels.map((model) =>
-						model.id === id ? { ...model, name } : model
-					),
-				}));
-			},
-
-			clearGeneratedModels: () => {
-				// Clean up blob URLs
-				get().generatedModels.forEach((model) => {
-					URL.revokeObjectURL(model.url);
-				});
-				set({ generatedModels: [], currentModel: null });
-			},
-
-			addUploadedModel: (modelData) => {
-				const id = `uploaded-model-${Date.now()}`;
-				const url = URL.createObjectURL(modelData.blob);
-				const model: UploadedModel = {
-					...modelData,
-					id,
-					url,
-					timestamp: Date.now(),
-				};
-
-				set((state) => ({
-					uploadedModels: [...state.uploadedModels, model],
-					currentModel: model, // Set as current model
-				}));
-			},
-
-			removeUploadedModel: (id) => {
-				set((state) => {
-					const modelToRemove = state.uploadedModels.find(
-						(m) => m.id === id
-					);
-					if (modelToRemove) {
-						URL.revokeObjectURL(modelToRemove.url);
-					}
-
-					const newModels = state.uploadedModels.filter(
-						(m) => m.id !== id
-					);
-					let newCurrentModel = state.currentModel;
-
-					// If we're removing the current model, set current to null or the last model
-					if (state.currentModel?.id === id) {
-						newCurrentModel =
-							newModels.length > 0
-								? newModels[newModels.length - 1]
-								: state.generatedModels.length > 0
-								? state.generatedModels[
-										state.generatedModels.length - 1
-								  ]
-								: null;
-					}
-
-					return {
-						uploadedModels: newModels,
-						currentModel: newCurrentModel,
-					};
-				});
-			},
-
-			renameUploadedModel: (id, name) => {
-				set((state) => ({
-					uploadedModels: state.uploadedModels.map((model) =>
-						model.id === id ? { ...model, name } : model
-					),
-				}));
-			},
-
-			clearUploadedModels: () => {
-				// Clean up blob URLs
-				get().uploadedModels.forEach((model) => {
-					URL.revokeObjectURL(model.url);
-				});
-				set({ uploadedModels: [] });
-			},
-
-			getUploadedModel: (id) => {
-				return get().uploadedModels.find((m) => m.id === id);
-			},
-
-			setBodyMeasurements: (measurements) => {
-				set({ bodyMeasurements: measurements });
-			},
-
-			clearBodyMeasurements: () => {
-				set({ bodyMeasurements: null });
-			},
-
-			setAdvancedSettings: (settings) => {
-				set((state) => ({
-					advancedSettings: {
-						...state.advancedSettings,
-						...settings,
-					},
-				}));
-			},
-
-			setCurrentStep: (step) => {
-				set({ currentStep: step });
-			},
-
-			setComplete: (complete) => {
-				set({ isComplete: complete });
-			},
-
-			reset: () => {
-				// Clean up blob URLs
-				get().facePhotos.forEach((photo) => {
-					URL.revokeObjectURL(photo.url);
-				});
-				const fullBodyPhoto = get().fullBodyPhoto;
-				if (fullBodyPhoto) {
-					URL.revokeObjectURL(fullBodyPhoto.url);
-				}
-				get().generatedModels.forEach((model) => {
-					URL.revokeObjectURL(model.url);
-				});
-				get().uploadedModels.forEach((model) => {
-					URL.revokeObjectURL(model.url);
-				});
-				set(initialState);
-			},
-
-			getAllData: () => {
-				const state = get();
-				return {
-					facePhotos: state.facePhotos,
-					bodyMeasurements: state.bodyMeasurements,
-					fullBodyPhoto: state.fullBodyPhoto,
-					generatedModels: state.generatedModels,
-					uploadedModels: state.uploadedModels,
-					currentModel: state.currentModel,
-					advancedSettings: state.advancedSettings,
-					currentStep: state.currentStep,
-					isComplete: state.isComplete,
-				};
-			},
-		}),
-		{
-			name: "photo-store",
-			// Only persist certain data, not blob URLs (they're recreated)
-			partialize: (state) => ({
-				bodyMeasurements: state.bodyMeasurements,
-				facePhotoMetadata: state.facePhotoMetadata,
-				generatedModels: state.generatedModels.map((model) => ({
-					...model,
-					blob: undefined, // Remove blob from persistence
-					url: undefined, // Remove URL from persistence
-				})),
-				uploadedModels: state.uploadedModels.map((model) => ({
-					...model,
-					blob: undefined, // Remove blob from persistence
-					url: undefined, // Remove URL from persistence
-				})),
-				currentModel: state.currentModel
-					? {
-							...state.currentModel,
-							blob: undefined, // Remove blob from persistence
-							url: undefined, // Remove URL from persistence
-					  }
-					: null,
-				advancedSettings: state.advancedSettings,
-				currentStep: state.currentStep,
-				isComplete: state.isComplete,
-				// Note: facePhotos with blob URLs are not persisted
-				// They should be recaptured if needed after app restart
-			}),
-			onRehydrateStorage:
-				() =>
-				(state, { set }) => {
-					// Redownload models from URLs after hydration
-					if (state?.generatedModels) {
-						Promise.all(
-							state.generatedModels.map(async (model) => {
-								try {
-									if (model.downloadUrl) {
-										const response = await fetch(
-											model.downloadUrl
-										);
-										if (response.ok) {
-											const blob = await response.blob();
-											const url =
-												URL.createObjectURL(blob);
-											return {
-												...model,
-												blob,
-												url,
-											};
-										}
-									}
-									return null; // Failed to download
-								} catch (error) {
-									console.error(
-										"Failed to redownload model:",
-										error
-									);
-									return null;
-								}
-							})
-						)
-							.then((redownloadedModels) => {
-								const validModels = redownloadedModels.filter(
-									Boolean
-								) as GeneratedModel[];
-								set({ generatedModels: validModels });
-
-								// Set current model if it exists and was redownloaded
-								if (state.currentModel) {
-									const currentModel = validModels.find(
-										(m) => m.id === state.currentModel!.id
-									);
-									if (currentModel) {
-										set({ currentModel });
-									}
-								}
-							})
-							.catch((error) => {
-								console.error(
-									"Failed to redownload models:",
-									error
-								);
-							});
-					}
-				},
+		// Clean up previous full body photo if exists
+		const currentPhoto = get().fullBodyPhoto;
+		if (currentPhoto) {
+			URL.revokeObjectURL(currentPhoto.url);
 		}
-	)
-);
+
+		set({ fullBodyPhoto: photo });
+	},
+
+	clearFullBodyPhoto: () => {
+		const currentPhoto = get().fullBodyPhoto;
+		if (currentPhoto) {
+			URL.revokeObjectURL(currentPhoto.url);
+		}
+		set({ fullBodyPhoto: null });
+	},
+
+	addGeneratedModel: (modelData) => {
+		const id = `generated-model-${Date.now()}`;
+		const url = URL.createObjectURL(modelData.blob);
+		const model: GeneratedModel = {
+			...modelData,
+			id,
+			url,
+			timestamp: Date.now(),
+		};
+
+		set((state) => ({
+			generatedModels: [...state.generatedModels, model],
+			currentModel: model, // Set as current model
+		}));
+	},
+
+	setCurrentModel: (model) => {
+		set({ currentModel: model });
+	},
+
+	removeGeneratedModel: (id) => {
+		set((state) => {
+			const modelToRemove = state.generatedModels.find(
+				(m) => m.id === id
+			);
+			if (modelToRemove) {
+				URL.revokeObjectURL(modelToRemove.url);
+			}
+
+			const newModels = state.generatedModels.filter((m) => m.id !== id);
+			let newCurrentModel = state.currentModel;
+
+			// If the removed model was the current one, set current to null or the first available
+			if (newCurrentModel?.id === id) {
+				newCurrentModel = newModels[0] || null;
+			}
+
+			return {
+				generatedModels: newModels,
+				currentModel: newCurrentModel,
+			};
+		});
+	},
+
+	getGeneratedModel: (id) => {
+		return get().generatedModels.find((m) => m.id === id);
+	},
+
+	renameGeneratedModel: (id, name) => {
+		set((state) => ({
+			generatedModels: state.generatedModels.map((model) =>
+				model.id === id ? { ...model, name } : model
+			),
+		}));
+	},
+
+	clearGeneratedModels: () => {
+		// Clean up blob URLs
+		get().generatedModels.forEach((model) => {
+			URL.revokeObjectURL(model.url);
+		});
+		set({ generatedModels: [], currentModel: null });
+	},
+
+	addUploadedModel: (modelData) => {
+		const id = `uploaded-model-${Date.now()}`;
+		const url = URL.createObjectURL(modelData.blob);
+		const model: UploadedModel = {
+			...modelData,
+			id,
+			url,
+			timestamp: Date.now(),
+		};
+
+		set((state) => ({
+			uploadedModels: [...state.uploadedModels, model],
+			currentModel: model, // Set as current model
+		}));
+	},
+
+	removeUploadedModel: (id) => {
+		set((state) => {
+			const modelToRemove = state.uploadedModels.find((m) => m.id === id);
+			if (modelToRemove) {
+				URL.revokeObjectURL(modelToRemove.url);
+			}
+
+			const newModels = state.uploadedModels.filter((m) => m.id !== id);
+			let newCurrentModel = state.currentModel;
+
+			// If we're removing the current model, set current to null or the last model
+			if (state.currentModel?.id === id) {
+				newCurrentModel =
+					newModels.length > 0
+						? newModels[newModels.length - 1]
+						: state.generatedModels.length > 0
+						? state.generatedModels[
+								state.generatedModels.length - 1
+						  ]
+						: null;
+			}
+
+			return {
+				uploadedModels: newModels,
+				currentModel: newCurrentModel,
+			};
+		});
+	},
+
+	renameUploadedModel: (id, name) => {
+		set((state) => ({
+			uploadedModels: state.uploadedModels.map((model) =>
+				model.id === id ? { ...model, name } : model
+			),
+		}));
+	},
+
+	clearUploadedModels: () => {
+		// Clean up blob URLs
+		get().uploadedModels.forEach((model) => {
+			URL.revokeObjectURL(model.url);
+		});
+		set({ uploadedModels: [] });
+	},
+
+	getUploadedModel: (id) => {
+		return get().uploadedModels.find((m) => m.id === id);
+	},
+
+	setBodyMeasurements: (measurements) => {
+		set({ bodyMeasurements: measurements });
+	},
+
+	clearBodyMeasurements: () => {
+		set({ bodyMeasurements: null });
+	},
+
+	setAdvancedSettings: (settings) => {
+		set((state) => ({
+			advancedSettings: {
+				...state.advancedSettings,
+				...settings,
+			},
+		}));
+	},
+
+	setCurrentStep: (step) => {
+		set({ currentStep: step });
+	},
+
+	setComplete: (complete) => {
+		set({ isComplete: complete });
+	},
+
+	reset: () => {
+		// Clean up blob URLs
+		get().facePhotos.forEach((photo) => {
+			URL.revokeObjectURL(photo.url);
+		});
+		const fullBodyPhoto = get().fullBodyPhoto;
+		if (fullBodyPhoto) {
+			URL.revokeObjectURL(fullBodyPhoto.url);
+		}
+		get().generatedModels.forEach((model) => {
+			URL.revokeObjectURL(model.url);
+		});
+		get().uploadedModels.forEach((model) => {
+			URL.revokeObjectURL(model.url);
+		});
+		set(initialState);
+	},
+
+	getAllData: () => {
+		const state = get();
+		return {
+			facePhotos: state.facePhotos,
+			bodyMeasurements: state.bodyMeasurements,
+			fullBodyPhoto: state.fullBodyPhoto,
+			generatedModels: state.generatedModels,
+			uploadedModels: state.uploadedModels,
+			currentModel: state.currentModel,
+			advancedSettings: state.advancedSettings,
+			currentStep: state.currentStep,
+			isComplete: state.isComplete,
+		};
+	},
+}));

@@ -1,8 +1,10 @@
 import { useState } from "react";
+import React from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import {
 	User,
 	Upload,
@@ -14,9 +16,12 @@ import {
 	List,
 	Download,
 	Edit,
+	Loader2,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { usePhotoStore } from "@/lib/photoStore";
+import { useApiDataStore } from "@/lib/apiDataStore";
+import { api } from "@/lib/api";
 import { toast } from "sonner";
 
 const ModelLibrary = () => {
@@ -26,6 +31,14 @@ const ModelLibrary = () => {
 	const [filterType, setFilterType] = useState<
 		"all" | "generated" | "uploaded"
 	>("all");
+	const [isUploading, setIsUploading] = useState(false);
+	const [uploadProgress, setUploadProgress] = useState(0);
+	const [downloadingModels, setDownloadingModels] = useState<Set<string>>(
+		new Set()
+	);
+	const [downloadProgress, setDownloadProgress] = useState<
+		Map<string, number>
+	>(new Map());
 
 	const {
 		generatedModels,
@@ -36,6 +49,13 @@ const ModelLibrary = () => {
 		removeGeneratedModel,
 	} = usePhotoStore();
 
+	const { userModels, modelsLoading, loadUserModels } = useApiDataStore();
+
+	// Load models from API on mount
+	React.useEffect(() => {
+		loadUserModels();
+	}, [loadUserModels]);
+
 	const allModels = [
 		...generatedModels.map((model) => ({
 			...model,
@@ -44,6 +64,12 @@ const ModelLibrary = () => {
 		...uploadedModels.map((model) => ({
 			...model,
 			type: "uploaded" as const,
+		})),
+		...userModels.map((model) => ({
+			...model,
+			type: "api" as const,
+			url: model.url,
+			name: model.filename,
 		})),
 	];
 
@@ -55,7 +81,9 @@ const ModelLibrary = () => {
 		return matchesSearch && matchesFilter;
 	});
 
-	const handleModelUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+	const handleModelUpload = async (
+		event: React.ChangeEvent<HTMLInputElement>
+	) => {
 		const file = event.target.files?.[0];
 		if (!file) return;
 
@@ -78,16 +106,159 @@ const ModelLibrary = () => {
 			return;
 		}
 
+		setIsUploading(true);
+		setUploadProgress(0);
+
 		try {
-			// This would normally add to the store, but for now we'll show a success message
-			toast.success("Model uploaded successfully!");
+			// Upload the model using the API with progress tracking
+			const uploadResponse = await api.uploadUserModel(
+				file,
+				"custom",
+				undefined,
+				undefined,
+				(progress) => {
+					setUploadProgress(progress);
+				}
+			);
+
+			if (uploadResponse.success) {
+				const uploadedModel = uploadResponse.data;
+
+				// Download the model from the URL with progress tracking
+				const response = await fetch(uploadedModel.url);
+				if (!response.ok) {
+					throw new Error("Failed to download uploaded model");
+				}
+
+				const contentLength = response.headers.get("content-length");
+				const total = contentLength ? parseInt(contentLength, 10) : 0;
+				let loaded = 0;
+
+				const reader = response.body?.getReader();
+				const chunks: Uint8Array[] = [];
+
+				if (reader) {
+					while (true) {
+						const { done, value } = await reader.read();
+						if (done) break;
+						chunks.push(value);
+						loaded += value.length;
+						if (total > 0) {
+							const downloadProgress = Math.round(
+								(loaded * 100) / total
+							);
+							setUploadProgress(50 + downloadProgress / 2); // Show download progress in second half
+						}
+					}
+				}
+
+				const blob = new Blob(chunks);
+
+				// Add to photoStore
+				const { addUploadedModel } = usePhotoStore.getState();
+				addUploadedModel({
+					blob,
+					fileName: uploadedModel.filename,
+					name: uploadedModel.filename,
+				});
+
+				// Reload API models to include the new one
+				loadUserModels();
+
+				setUploadProgress(100);
+				toast.success("Model uploaded successfully!");
+			} else {
+				throw new Error("Upload failed");
+			}
 		} catch (error) {
 			console.error("Upload error:", error);
 			toast.error("Failed to upload model");
+		} finally {
+			setIsUploading(false);
+			setUploadProgress(0);
 		}
 
 		// Reset the input
 		event.target.value = "";
+	};
+
+	const handleModelDownload = async (model: any) => {
+		if (downloadingModels.has(model.id)) return;
+
+		setDownloadingModels((prev) => new Set(prev).add(model.id));
+		setDownloadProgress((prev) => new Map(prev).set(model.id, 0));
+
+		try {
+			let downloadUrl = model.url;
+
+			// If it's an API model, use the URL directly
+			if (model.type === "api") {
+				downloadUrl = model.url;
+			} else if (model.downloadUrl) {
+				// For generated models with downloadUrl
+				downloadUrl = model.downloadUrl;
+			} else {
+				throw new Error("No download URL available");
+			}
+
+			// Download with progress tracking
+			const response = await fetch(downloadUrl);
+			if (!response.ok) {
+				throw new Error("Failed to download model");
+			}
+
+			const contentLength = response.headers.get("content-length");
+			const total = contentLength ? parseInt(contentLength, 10) : 0;
+			let loaded = 0;
+
+			const reader = response.body?.getReader();
+			const chunks: Uint8Array[] = [];
+
+			if (reader) {
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					chunks.push(value);
+					loaded += value.length;
+					if (total > 0) {
+						const progress = Math.round((loaded * 100) / total);
+						setDownloadProgress((prev) =>
+							new Map(prev).set(model.id, progress)
+						);
+					}
+				}
+			}
+
+			// Create blob and download link
+			const blob = new Blob(chunks);
+			const link = document.createElement("a");
+			link.href = URL.createObjectURL(blob);
+			link.download =
+				model.name || model.fileName || `model-${model.id}.glb`;
+			link.target = "_blank";
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+
+			// Clean up blob URL
+			URL.revokeObjectURL(link.href);
+
+			toast.success("Download completed");
+		} catch (error) {
+			console.error("Download error:", error);
+			toast.error("Failed to download model");
+		} finally {
+			setDownloadingModels((prev) => {
+				const newSet = new Set(prev);
+				newSet.delete(model.id);
+				return newSet;
+			});
+			setDownloadProgress((prev) => {
+				const newMap = new Map(prev);
+				newMap.delete(model.id);
+				return newMap;
+			});
+		}
 	};
 
 	const handleDeleteModel = (model: any, type: "generated" | "uploaded") => {
@@ -127,9 +298,20 @@ const ModelLibrary = () => {
 							htmlFor="model-upload"
 							className="cursor-pointer"
 						>
-							<Button className="flex items-center space-x-2">
-								<Upload className="w-4 h-4" />
-								<span>Upload Model</span>
+							<Button
+								className="flex items-center space-x-2"
+								disabled={isUploading}
+							>
+								{isUploading ? (
+									<Loader2 className="w-4 h-4 animate-spin" />
+								) : (
+									<Upload className="w-4 h-4" />
+								)}
+								<span>
+									{isUploading
+										? "Uploading..."
+										: "Upload Model"}
+								</span>
 							</Button>
 						</label>
 						<input
@@ -138,12 +320,27 @@ const ModelLibrary = () => {
 							accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
 							onChange={handleModelUpload}
 							className="hidden"
+							disabled={isUploading}
 						/>
+
+						{/* Upload Progress */}
+						{isUploading && (
+							<div className="flex items-center space-x-2 min-w-[200px]">
+								<Progress
+									value={uploadProgress}
+									className="flex-1"
+								/>
+								<span className="text-sm text-muted-foreground">
+									{uploadProgress}%
+								</span>
+							</div>
+						)}
 
 						{/* Generate Button */}
 						<Button
 							variant="outline"
 							onClick={() => navigate("/onboarding/consent")}
+							disabled={isUploading}
 						>
 							<Sparkles className="w-4 h-4 mr-2" />
 							Generate New
@@ -294,7 +491,7 @@ const ModelLibrary = () => {
 									htmlFor="empty-upload"
 									className="cursor-pointer"
 								>
-									<Button>
+									<Button disabled={isUploading}>
 										<Upload className="w-4 h-4 mr-2" />
 										Upload Model
 									</Button>
@@ -305,12 +502,14 @@ const ModelLibrary = () => {
 									accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
 									onChange={handleModelUpload}
 									className="hidden"
+									disabled={isUploading}
 								/>
 								<Button
 									variant="outline"
 									onClick={() =>
 										navigate("/onboarding/consent")
 									}
+									disabled={isUploading}
 								>
 									<Sparkles className="w-4 h-4 mr-2" />
 									Generate Model
@@ -397,6 +596,46 @@ const ModelLibrary = () => {
 															? "Active"
 															: "Use"}
 													</Button>
+													<div className="relative">
+														<Button
+															size="sm"
+															variant="ghost"
+															onClick={() =>
+																handleModelDownload(
+																	model
+																)
+															}
+															disabled={downloadingModels.has(
+																model.id
+															)}
+															className="text-muted-foreground hover:text-foreground"
+														>
+															{downloadingModels.has(
+																model.id
+															) ? (
+																<Loader2 className="w-4 h-4 animate-spin" />
+															) : (
+																<Download className="w-4 h-4" />
+															)}
+														</Button>
+														{downloadingModels.has(
+															model.id
+														) &&
+															downloadProgress.has(
+																model.id
+															) && (
+																<div className="absolute -bottom-1 left-0 right-0 h-1 bg-muted rounded-full overflow-hidden">
+																	<div
+																		className="h-full bg-primary transition-all duration-300 ease-out"
+																		style={{
+																			width: `${downloadProgress.get(
+																				model.id
+																			)}%`,
+																		}}
+																	/>
+																</div>
+															)}
+													</div>
 													<Button
 														size="sm"
 														variant="ghost"
@@ -477,6 +716,46 @@ const ModelLibrary = () => {
 															? "Active"
 															: "Use"}
 													</Button>
+													<div className="relative">
+														<Button
+															size="sm"
+															variant="ghost"
+															onClick={() =>
+																handleModelDownload(
+																	model
+																)
+															}
+															disabled={downloadingModels.has(
+																model.id
+															)}
+															className="text-muted-foreground hover:text-foreground"
+														>
+															{downloadingModels.has(
+																model.id
+															) ? (
+																<Loader2 className="w-4 h-4 animate-spin" />
+															) : (
+																<Download className="w-4 h-4" />
+															)}
+														</Button>
+														{downloadingModels.has(
+															model.id
+														) &&
+															downloadProgress.has(
+																model.id
+															) && (
+																<div className="absolute -bottom-1 left-0 right-0 h-1 bg-muted rounded-full overflow-hidden">
+																	<div
+																		className="h-full bg-primary transition-all duration-300 ease-out"
+																		style={{
+																			width: `${downloadProgress.get(
+																				model.id
+																			)}%`,
+																		}}
+																	/>
+																</div>
+															)}
+													</div>
 													<Button
 														size="sm"
 														variant="ghost"
@@ -489,12 +768,6 @@ const ModelLibrary = () => {
 														className="text-destructive hover:text-destructive"
 													>
 														<Trash2 className="w-4 h-4" />
-													</Button>
-													<Button
-														size="sm"
-														variant="ghost"
-													>
-														<Download className="w-4 h-4" />
 													</Button>
 												</div>
 											</div>

@@ -15,6 +15,7 @@ import FullBodyUpload from "./pages/onboarding/FullBodyUpload";
 import Processing from "./pages/onboarding/Processing";
 import AvatarPreview from "./pages/onboarding/AvatarPreview";
 import SignIn from "./pages/SignIn";
+import SignUp from "./pages/SignUp";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import DataControls from "./pages/DataControls";
 import TryOn from "./pages/TryOn";
@@ -24,7 +25,7 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 // Pages that don't need the navigation header
-const publicPages = ["/", "/signin", "/privacy-policy"];
+const publicPages = ["/", "/login", "/signup", "/privacy-policy"];
 
 const AppContent = () => {
 	const location = useLocation();
@@ -36,7 +37,8 @@ const AppContent = () => {
 			<Routes>
 				<Route path="/" element={<Welcome />} />
 				<Route path="/dashboard" element={<Dashboard />} />
-				<Route path="/signin" element={<SignIn />} />
+				<Route path="/login" element={<SignIn />} />
+				<Route path="/signup" element={<SignUp />} />
 				<Route path="/privacy-policy" element={<PrivacyPolicy />} />
 				<Route path="/data-controls" element={<DataControls />} />
 				<Route path="/onboarding/consent" element={<Consent />} />

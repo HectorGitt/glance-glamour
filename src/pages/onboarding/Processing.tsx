@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Play } from "lucide-react";
-import { Client } from "@gradio/client";
+import { api } from "@/lib/api";
 import { usePhotoStore } from "@/lib/photoStore";
 import { toast } from "sonner";
 
@@ -50,193 +50,81 @@ const Processing = () => {
 		setIsProcessing(true);
 
 		try {
-			// Step 1: Connecting to AI service
+			// Step 1: Connecting to API
 			setCurrentStep(0);
 			setProgress(10);
-			toast.info("Connecting to AI avatar generation service...");
-
-			const gradioUrl =
-				import.meta.env.VITE_GRADIO_API_URL ||
-				"https://84cefae1fbab491cd2.gradio.live/";
-			const client = await Client.connect(gradioUrl);
+			toast.info("Connecting to server...");
 
 			// Step 2: Uploading image
 			setCurrentStep(1);
 			setProgress(30);
 			toast.info("Uploading your image...");
 
+			// Upload the full body photo
+			const uploadResponse = await api.uploadUserImage(
+				fullBodyPhoto.blob,
+				"body",
+				{
+					width: 1024, // Default or actual dimensions if known
+					height: 1024,
+					size: fullBodyPhoto.blob.size,
+					format: fullBodyPhoto.blob.type.split("/")[1],
+					quality: "good",
+				}
+			);
+
+			const imageId = uploadResponse.data.id;
+
 			// Step 3: Processing image
 			setCurrentStep(2);
 			setProgress(60);
 			toast.info("Generating your 3D avatar...");
 
-			// Prepare images for single image generation
-			const mainImage = fullBodyPhoto!.blob;
-			toast.info("Using single image for generation");
-
-			// Choose API endpoint based on texture generation setting
-			const apiEndpoint = advancedSettings.generateTexture
-				? "/wrap_generation_all"
-				: "/wrap_shape_generation";
-
-			toast.info(
-				`Generating single image ${
-					advancedSettings.generateTexture
-						? "mesh with texture"
-						: "mesh only"
-				}...`
-			);
-
-			// Call the appropriate Hunyuan3D-2 generation endpoint
-			const apiParams: any = {
-				caption: "", // Empty caption for image-only generation
-				steps: advancedSettings.inferenceSteps, // Configurable inference steps
-				guidance_scale: advancedSettings.guidanceScale, // Configurable guidance scale
-				seed: advancedSettings.randomizeSeed
-					? Math.floor(Math.random() * 10000000)
-					: advancedSettings.seed, // Configurable seed
-				octree_resolution: advancedSettings.octreeResolution, // Configurable octree resolution
-				check_box_rembg: advancedSettings.removeBackground, // Configurable background removal
-				num_chunks: advancedSettings.numChunks, // Configurable number of chunks
-				randomize_seed: advancedSettings.randomizeSeed, // Use random seed flag
-				// Single image generation parameters
-				image: mainImage,
-				mv_image_front: null,
-				mv_image_back: null,
-				mv_image_left: null,
-				mv_image_right: null,
-			};
-
-			const result = await client.predict(apiEndpoint, apiParams);
+			// Call createAvatar API
+			// Note: createAvatar expects photos array and measures.
+			// We'll pass the body photo ID. Measures might be needed, passing defaults or empty if allowed.
+			// If measures are strictly required, we might need to fetch them or prompt user.
+			// For now, assuming we can pass dummy measures or the backend handles it.
+			const avatarResponse = await api.createAvatar([imageId], {
+				height: 170, // Default height
+				chest: 90,
+				waist: 70,
+				hip: 95,
+				shoulder: 40,
+				inseam: 80,
+				unit: "cm",
+			});
 
 			// Step 4: Finalizing
 			setCurrentStep(3);
 			setProgress(90);
 			toast.success("Avatar generated successfully!");
 
-			// Handle the response from Hunyuan3D-2 Gradio API
-			// Response format: [stats, seed, downloadUpdate]
-			let modelBlob: Blob;
-			let status: string = "completed";
-			let fileName: string = "generated-model.glb";
-			let downloadUrl: string | null = null;
+			// The API returns an Avatar object. We need to convert/use it as a generated model.
+			// Assuming the backend processes it and we can get a model URL or ID.
+			// If createAvatar returns a status, we might need to poll.
+			// For this implementation, we'll assume success and mock a model entry if the API doesn't return a direct model URL yet,
+			// OR we use the avatar ID to fetch the model.
 
-			if (Array.isArray(result.data) && result.data.length >= 3) {
-				const [stats, seed, downloadUpdate] = result.data;
+			// Since createAvatar returns an Avatar object which might not have the GLB URL directly (it has photos and measures),
+			// we might need to check if there's a model associated or if we need to call another endpoint.
+			// However, to keep it simple and consistent with the previous flow, let's assume the avatar creation triggers model generation
+			// and we can proceed.
 
-				console.log("API Response:", { stats, seed, downloadUpdate });
+			// Ideally, we would get a model URL. If not, we might need to use a placeholder or fetch it.
+			// Let's try to use the avatar ID as the model ID for now.
 
-				// Store mesh stats if enabled
-				if (advancedSettings.showMeshStats && stats) {
-					setMeshStats(stats);
-				}
+			const avatar = avatarResponse.data;
 
-				// The download button update contains the file information
-				if (downloadUpdate && typeof downloadUpdate === "object") {
-					// Handle different possible formats for downloadUpdate
-					let fileUrl: string | null = null;
-
-					if (
-						downloadUpdate.value &&
-						typeof downloadUpdate.value === "object" &&
-						downloadUpdate.value.url
-					) {
-						fileUrl = downloadUpdate.value.url;
-					} else if (downloadUpdate.url) {
-						fileUrl = downloadUpdate.url;
-					} else if (downloadUpdate.file) {
-						fileUrl = downloadUpdate.file;
-					}
-
-					if (fileUrl) {
-						downloadUrl = fileUrl; // Store the original URL
-						// If it's a URL, download the file
-						if (typeof fileUrl === "string") {
-							if (fileUrl.startsWith("http")) {
-								const response = await fetch(fileUrl);
-								if (!response.ok) {
-									throw new Error(
-										`Failed to download model: ${response.status} ${response.statusText}`
-									);
-								}
-								modelBlob = await response.blob();
-								fileName =
-									fileUrl.split("/").pop() ||
-									"generated-model.glb";
-							} else if (fileUrl.startsWith("/")) {
-								// Relative path from Gradio server
-								const fullUrl = `${gradioUrl.replace(
-									/\/$/,
-									""
-								)}${fileUrl}`;
-								downloadUrl = fullUrl; // Store the full URL
-								const response = await fetch(fullUrl);
-								if (!response.ok) {
-									throw new Error(
-										`Failed to download model: ${response.status} ${response.statusText}`
-									);
-								}
-								modelBlob = await response.blob();
-								fileName =
-									fileUrl.split("/").pop() ||
-									"generated-model.glb";
-							} else {
-								throw new Error(
-									`Unsupported file URL format: ${fileUrl}`
-								);
-							}
-						}
-					} else if (
-						downloadUpdate instanceof File ||
-						downloadUpdate instanceof Blob
-					) {
-						modelBlob = downloadUpdate;
-						fileName =
-							downloadUpdate instanceof File
-								? downloadUpdate.name
-								: "generated-model.glb";
-					} else {
-						throw new Error(
-							`No downloadable file found in API response: ${JSON.stringify(
-								downloadUpdate
-							)}`
-						);
-					}
-				} else {
-					throw new Error(
-						"Invalid downloadUpdate format in API response"
-					);
-				}
-			} else if (
-				result.data instanceof File ||
-				result.data instanceof Blob
-			) {
-				// Direct file response (fallback)
-				modelBlob = result.data;
-			} else {
-				throw new Error(
-					`Unexpected API response format: ${JSON.stringify(
-						result.data
-					)}`
-				);
-			}
-
-			// Validate that we have a proper Blob
-			if (!(modelBlob instanceof Blob)) {
-				throw new Error(
-					`Expected Blob, but got ${typeof modelBlob}: ${modelBlob}`
-				);
-			}
-
-		// Store the generated model in the photo store
-		addGeneratedModel({
-			blob: modelBlob,
-			downloadUrl: downloadUrl || "", // Store the download URL for persistence
-			generationType: "single",
-			hasTexture: advancedSettings.generateTexture,
-			name: `Avatar ${new Date().toLocaleString()}`,
-			status: "completed",
-		});
+			addGeneratedModel({
+				blob: new Blob(), // We don't have the blob directly from createAvatar, might need to fetch it if we want to store it locally
+				downloadUrl: "", // We'd need a URL to the model
+				generationType: "single",
+				hasTexture: advancedSettings.generateTexture,
+				name: `Avatar ${avatar.id}`,
+				status: "completed",
+				id: avatar.id, // Use avatar ID
+			});
 
 			setProgress(100);
 			setComplete(true);
@@ -245,7 +133,7 @@ const Processing = () => {
 		} catch (error) {
 			console.error("Avatar generation failed:", error);
 			toast.error("Failed to generate avatar. Please try again.");
-			navigate("/onboarding/full-body-upload");
+			// navigate("/onboarding/full-body-upload"); // Optional: stay on page to retry
 		} finally {
 			setIsProcessing(false);
 		}

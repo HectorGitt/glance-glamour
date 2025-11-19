@@ -4,7 +4,6 @@ import axios, {
 	AxiosRequestConfig,
 	AxiosResponse,
 } from "axios";
-import { useApiConfig, type ApiEndpoints } from "./apiConfig";
 
 // API Configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
@@ -12,10 +11,129 @@ const API_TIMEOUT = 30000; // 30 seconds
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
 
-// Get dynamic endpoint
-const getEndpoint = (key: keyof ApiEndpoints) => {
-	const config = useApiConfig.getState();
-	return config.endpoints[key];
+// Helper function for graceful error handling
+const handleApiError = (error: any, operation: string): never => {
+	console.error(`API Error in ${operation}:`, error);
+
+	// If it's an Axios error with response
+	if (error.response) {
+		const { status, data } = error.response;
+		const message = data?.message || data?.error || `HTTP ${status} error`;
+		const errorCode = data?.error?.code || "UNKNOWN_ERROR";
+
+		switch (status) {
+			case 400:
+				throw new Error(`Invalid request: ${message}`);
+			case 401:
+				// Clear tokens and redirect to login for auth errors
+				localStorage.removeItem("auth_token");
+				localStorage.removeItem("refresh_token");
+				// Don't redirect immediately, let the component handle it
+				throw new Error(
+					"Authentication required. Please log in again."
+				);
+			case 403:
+				throw new Error(
+					"Access denied. You don't have permission for this action."
+				);
+			case 404:
+				throw new Error(`Resource not found: ${message}`);
+			case 409:
+				throw new Error(`Conflict: ${message}`);
+			case 422:
+				throw new Error(`Validation error: ${message}`);
+			case 429:
+				throw new Error("Too many requests. Please try again later.");
+			case 500:
+			case 502:
+			case 503:
+			case 504:
+				throw new Error("Server error. Please try again later.");
+			default:
+				throw new Error(`Request failed: ${message}`);
+		}
+	}
+
+	// If it's a network error
+	if (error.code === "NETWORK_ERROR" || !error.response) {
+		throw new Error(
+			"Network error. Please check your connection and try again."
+		);
+	}
+
+	// If it's a timeout
+	if (error.code === "ECONNABORTED") {
+		throw new Error("Request timed out. Please try again.");
+	}
+
+	// Generic error
+	throw new Error(
+		error.message || "An unexpected error occurred. Please try again."
+	);
+};
+
+// Enhanced error handler that returns error info instead of throwing
+export const getApiErrorInfo = (error: any) => {
+	if (error.response) {
+		const { status, data } = error.response;
+		const message = data?.message || data?.error || `HTTP ${status} error`;
+		const errorCode = data?.error?.code || "UNKNOWN_ERROR";
+
+		return {
+			status,
+			message,
+			errorCode,
+			isAuthError: status === 401,
+			isNetworkError: false,
+			isServerError: status >= 500,
+			isClientError: status >= 400 && status < 500,
+			shouldRetry: status >= 500 || status === 429,
+			shouldRedirectToLogin: status === 401,
+		};
+	}
+
+	// Network or timeout errors
+	if (error.code === "NETWORK_ERROR" || !error.response) {
+		return {
+			status: null,
+			message:
+				"Network error. Please check your connection and try again.",
+			errorCode: "NETWORK_ERROR",
+			isAuthError: false,
+			isNetworkError: true,
+			isServerError: false,
+			isClientError: false,
+			shouldRetry: true,
+			shouldRedirectToLogin: false,
+		};
+	}
+
+	if (error.code === "ECONNABORTED") {
+		return {
+			status: null,
+			message: "Request timed out. Please try again.",
+			errorCode: "TIMEOUT_ERROR",
+			isAuthError: false,
+			isNetworkError: false,
+			isServerError: false,
+			isClientError: false,
+			shouldRetry: true,
+			shouldRedirectToLogin: false,
+		};
+	}
+
+	return {
+		status: null,
+		message:
+			error.message || "An unexpected error occurred. Please try again.",
+		errorCode: "UNKNOWN_ERROR",
+		isAuthError: false,
+		isNetworkError: false,
+		isServerError: false,
+		isClientError: false,
+		shouldRetry: false,
+		shouldRedirectToLogin: false,
+	};
 };
 
 // Create axios instance
@@ -46,22 +164,79 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
 	(response) => response,
 	async (error: AxiosError) => {
-		const config = error.config as AxiosRequestConfig & { _retry?: number };
+		const originalRequest = error.config as AxiosRequestConfig & {
+			_retry?: boolean;
+		};
 
-		// Don't retry if max retries reached
-		if (!config || (config._retry || 0) >= MAX_RETRIES) {
-			return Promise.reject(error);
+		// Handle 401 Unauthorized (Token Expired)
+		if (
+			error.response?.status === 401 &&
+			!originalRequest._retry &&
+			!originalRequest.url?.includes("/auth/refresh") &&
+			!originalRequest.url?.includes("/auth/login")
+		) {
+			originalRequest._retry = true;
+
+			try {
+				const refreshToken = localStorage.getItem("refresh_token");
+				if (!refreshToken) {
+					throw new Error("No refresh token available");
+				}
+
+				// Call refresh endpoint directly using axios to avoid interceptor loop
+				// or use a separate instance. Here we use a direct axios call.
+				const response = await axios.post(
+					`${API_BASE_URL}/auth/refresh`,
+					{ refreshToken }
+				);
+
+				const { accessToken, expiresIn } = response.data.data;
+
+				// Update local storage
+				localStorage.setItem("auth_token", accessToken);
+				// Update refresh token if returned (optional, depends on backend)
+				if (response.data.data.refreshToken) {
+					localStorage.setItem(
+						"refresh_token",
+						response.data.data.refreshToken
+					);
+				}
+
+				// Update header for original request
+				if (originalRequest.headers) {
+					originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+				}
+
+				// Retry original request
+				return apiClient(originalRequest);
+			} catch (refreshError) {
+				// Refresh failed - clear tokens and redirect to login
+				localStorage.removeItem("auth_token");
+				localStorage.removeItem("refresh_token");
+				window.location.href = "/login";
+				return Promise.reject(refreshError);
+			}
 		}
 
-		// Retry on network errors or 5xx errors
+		// Retry on network errors or 5xx errors (existing logic)
+		// Only retry if it's NOT a 401 (which is handled above) and not already retried for other reasons
 		if (
 			!error.response ||
 			(error.response.status >= 500 && error.response.status < 600)
 		) {
-			config._retry = (config._retry || 0) + 1;
+			const config = originalRequest as AxiosRequestConfig & {
+				_retryCount?: number;
+			};
+
+			// Don't retry if max retries reached
+			if (!config || (config._retryCount || 0) >= MAX_RETRIES) {
+				return Promise.reject(error);
+			}
+
+			config._retryCount = (config._retryCount || 0) + 1;
 
 			// Exponential backoff
-			const delay = RETRY_DELAY * Math.pow(2, config._retry - 1);
+			const delay = RETRY_DELAY * Math.pow(2, config._retryCount - 1);
 			await new Promise((resolve) => setTimeout(resolve, delay));
 
 			return apiClient(config);
@@ -354,6 +529,14 @@ export const api = {
 		return response.data;
 	},
 
+	// Get user body measurements
+	getUserMeasurements: async (): Promise<ApiResponse<BodyMeasures>> => {
+		const response = await apiClient.get<ApiResponse<BodyMeasures>>(
+			"/users/me/measurements"
+		);
+		return response.data;
+	},
+
 	// Update user profile
 	updateUserProfile: async (
 		updates: Partial<User>
@@ -443,29 +626,43 @@ export const api = {
 		file: File,
 		type: UserModel["type"],
 		associatedImages?: string[],
-		metadata?: Partial<UserModel["metadata"]>
+		metadata?: Partial<UserModel["metadata"]>,
+		onProgress?: (progress: number) => void
 	): Promise<ApiResponse<UserModel>> => {
-		const formData = new FormData();
-		formData.append("file", file);
-		formData.append("type", type);
-		if (associatedImages) {
-			formData.append(
-				"associatedImages",
-				JSON.stringify(associatedImages)
-			);
-		}
-		if (metadata) {
-			formData.append("metadata", JSON.stringify(metadata));
-		}
-
-		const response = await apiClient.post<ApiResponse<UserModel>>(
-			"/assets/models",
-			formData,
-			{
-				headers: { "Content-Type": "multipart/form-data" },
+		try {
+			const formData = new FormData();
+			formData.append("file", file);
+			formData.append("type", type);
+			if (associatedImages) {
+				formData.append(
+					"associatedImages",
+					JSON.stringify(associatedImages)
+				);
 			}
-		);
-		return response.data;
+			if (metadata) {
+				formData.append("metadata", JSON.stringify(metadata));
+			}
+
+			const response = await apiClient.post<ApiResponse<UserModel>>(
+				"/assets/models",
+				formData,
+				{
+					headers: { "Content-Type": "multipart/form-data" },
+					onUploadProgress: (progressEvent) => {
+						if (onProgress && progressEvent.total) {
+							const progress = Math.round(
+								(progressEvent.loaded * 100) /
+									progressEvent.total
+							);
+							onProgress(progress);
+						}
+					},
+				}
+			);
+			return response.data;
+		} catch (error) {
+			handleApiError(error, "uploadUserModel");
+		}
 	},
 
 	// Get user models
@@ -519,21 +716,29 @@ export const api = {
 	createTryOn: async (
 		request: TryOnRequest
 	): Promise<ApiResponse<TryOnResult>> => {
-		const response = await apiClient.post<ApiResponse<TryOnResult>>(
-			"/tryon",
-			request
-		);
-		return response.data;
+		try {
+			const response = await apiClient.post<ApiResponse<TryOnResult>>(
+				"/tryon",
+				request
+			);
+			return response.data;
+		} catch (error) {
+			handleApiError(error, "createTryOn");
+		}
 	},
 
 	// Get try-on result
 	getTryOnResult: async (
 		tryOnId: string
 	): Promise<ApiResponse<TryOnResult>> => {
-		const response = await apiClient.get<ApiResponse<TryOnResult>>(
-			`/tryon/${tryOnId}`
-		);
-		return response.data;
+		try {
+			const response = await apiClient.get<ApiResponse<TryOnResult>>(
+				`/tryon/${tryOnId}`
+			);
+			return response.data;
+		} catch (error) {
+			handleApiError(error, "getTryOnResult");
+		}
 	},
 
 	// Get user's try-on history
@@ -582,11 +787,15 @@ export const api = {
 		limit?: number;
 		offset?: number;
 	}): Promise<ApiResponse<ClothingItem[]>> => {
-		const response = await apiClient.get<ApiResponse<ClothingItem[]>>(
-			"/clothing/catalog",
-			{ params }
-		);
-		return response.data;
+		try {
+			const response = await apiClient.get<ApiResponse<ClothingItem[]>>(
+				"/clothing/catalog",
+				{ params }
+			);
+			return response.data;
+		} catch (error) {
+			handleApiError(error, "getClothingCatalog");
+		}
 	},
 
 	// Get specific clothing item
@@ -622,9 +831,8 @@ export const api = {
 		formData.append("photo", photo);
 		formData.append("angle", angle);
 
-		const endpoint = getEndpoint("uploadPhoto");
 		const response = await apiClient.post<ApiResponse<FacePhoto>>(
-			endpoint,
+			"/assets/images",
 			formData,
 			{
 				headers: { "Content-Type": "multipart/form-data" },
@@ -634,9 +842,9 @@ export const api = {
 	},
 
 	// Validate photo quality
-	validatePhoto: async (photoId: string): Promise<ApiResponse<FacePhoto>> => {
-		const response = await apiClient.post<ApiResponse<FacePhoto>>(
-			`/avatar/photos/${photoId}/validate`
+	validatePhoto: async (photoId: string): Promise<ApiResponse<UserImage>> => {
+		const response = await apiClient.post<ApiResponse<UserImage>>(
+			`/assets/images/${photoId}/validate`
 		);
 		return response.data;
 	},
@@ -644,9 +852,9 @@ export const api = {
 	// Submit body measures
 	submitMeasures: async (
 		measures: BodyMeasures
-	): Promise<ApiResponse<Avatar>> => {
-		const response = await apiClient.post<ApiResponse<Avatar>>(
-			"/avatar/measures",
+	): Promise<ApiResponse<BodyMeasures>> => {
+		const response = await apiClient.post<ApiResponse<BodyMeasures>>(
+			"/users/me/measurements",
 			measures
 		);
 		return response.data;
@@ -658,7 +866,7 @@ export const api = {
 		photoId: string
 	): Promise<ApiResponse<BodyMeasures>> => {
 		const response = await apiClient.post<ApiResponse<BodyMeasures>>(
-			"/avatar/estimate-measures",
+			"/users/me/measurements/estimate",
 			{
 				height,
 				photoId,
@@ -671,21 +879,24 @@ export const api = {
 	createAvatar: async (
 		photos: string[],
 		measures: BodyMeasures
-	): Promise<ApiResponse<Avatar>> => {
-		const response = await apiClient.post<ApiResponse<Avatar>>(
-			"/avatar/create",
+	): Promise<ApiResponse<UserModel>> => {
+		const response = await apiClient.post<ApiResponse<UserModel>>(
+			"/assets/models/generate",
 			{
-				photoIds: photos,
-				measures,
+				imageIds: photos,
+				measurements: measures,
+				type: "avatar",
 			}
 		);
 		return response.data;
 	},
 
 	// Get avatar status
-	getAvatarStatus: async (avatarId: string): Promise<ApiResponse<Avatar>> => {
-		const response = await apiClient.get<ApiResponse<Avatar>>(
-			`/avatar/${avatarId}`
+	getAvatarStatus: async (
+		avatarId: string
+	): Promise<ApiResponse<UserModel>> => {
+		const response = await apiClient.get<ApiResponse<UserModel>>(
+			`/assets/models/${avatarId}`
 		);
 		return response.data;
 	},
@@ -694,9 +905,9 @@ export const api = {
 	updateAvatarMeasures: async (
 		avatarId: string,
 		measures: Partial<BodyMeasures>
-	): Promise<ApiResponse<Avatar>> => {
-		const response = await apiClient.patch<ApiResponse<Avatar>>(
-			`/avatar/${avatarId}/measures`,
+	): Promise<ApiResponse<UserModel>> => {
+		const response = await apiClient.patch<ApiResponse<UserModel>>(
+			`/assets/models/${avatarId}/measurements`,
 			measures
 		);
 		return response.data;
@@ -707,10 +918,9 @@ export const api = {
 		avatarId: string,
 		outfitId: string
 	): Promise<ApiResponse<{ imageUrl: string; processingTime?: number }>> => {
-		const endpoint = getEndpoint("tryOn");
 		const response = await apiClient.post<
 			ApiResponse<{ imageUrl: string; processingTime?: number }>
-		>(endpoint, {
+		>("/tryon", {
 			avatarId,
 			outfitId,
 		});
@@ -721,11 +931,13 @@ export const api = {
 	getOutfitSuggestions: async (
 		avatarId: string,
 		limit = 3
-	): Promise<ApiResponse<Outfit[]>> => {
-		const endpoint = getEndpoint("catalog");
-		const response = await apiClient.get<ApiResponse<Outfit[]>>(endpoint, {
-			params: { avatarId, limit, suggestions: true },
-		});
+	): Promise<ApiResponse<ClothingItem[]>> => {
+		const response = await apiClient.get<ApiResponse<ClothingItem[]>>(
+			"/clothing/catalog",
+			{
+				params: { avatarId, limit, suggestions: true },
+			}
+		);
 		return response.data;
 	},
 
@@ -734,14 +946,17 @@ export const api = {
 		avatarId: string,
 		preferences: StylistRequest
 	): Promise<ApiResponse<StylistRecommendation>> => {
-		const endpoint = getEndpoint("stylist");
-		const response = await apiClient.post<
-			ApiResponse<StylistRecommendation>
-		>(endpoint, {
-			avatarId,
-			...preferences,
-		});
-		return response.data;
+		try {
+			const response = await apiClient.post<
+				ApiResponse<StylistRecommendation>
+			>("/stylist/recommendations", {
+				avatarId,
+				...preferences,
+			});
+			return response.data;
+		} catch (error) {
+			handleApiError(error, "getStylistRecommendations");
+		}
 	},
 
 	// Get all outfits catalog
@@ -749,27 +964,46 @@ export const api = {
 		category?: string;
 		priceRange?: [number, number];
 		search?: string;
-	}): Promise<ApiResponse<Outfit[]>> => {
-		const endpoint = getEndpoint("catalog");
-		const response = await apiClient.get<ApiResponse<Outfit[]>>(endpoint, {
-			params: filters,
-		});
+	}): Promise<ApiResponse<ClothingItem[]>> => {
+		const params: any = {};
+		if (filters?.category) params.category = filters.category;
+		if (filters?.search) params.search = filters.search;
+		if (filters?.priceRange) {
+			params.priceMin = filters.priceRange[0];
+			params.priceMax = filters.priceRange[1];
+		}
+
+		const response = await apiClient.get<ApiResponse<ClothingItem[]>>(
+			"/clothing/catalog",
+			{ params }
+		);
 		return response.data;
 	},
 
 	// Data controls
 	exportAvatarData: async (avatarId: string): Promise<Blob> => {
-		const response = await apiClient.get(`/avatar/${avatarId}/export`, {
-			responseType: "blob",
-		});
-		return response.data;
+		try {
+			const response = await apiClient.get(
+				`/assets/models/${avatarId}/export`,
+				{
+					responseType: "blob",
+				}
+			);
+			return response.data;
+		} catch (error) {
+			handleApiError(error, "exportAvatarData");
+		}
 	},
 
 	deleteAvatarData: async (avatarId: string): Promise<ApiResponse<void>> => {
-		const response = await apiClient.delete<ApiResponse<void>>(
-			`/avatar/${avatarId}`
-		);
-		return response.data;
+		try {
+			const response = await apiClient.delete<ApiResponse<void>>(
+				`/assets/models/${avatarId}`
+			);
+			return response.data;
+		} catch (error) {
+			handleApiError(error, "deleteAvatarData");
+		}
 	},
 
 	// User consent
@@ -778,7 +1012,7 @@ export const api = {
 		dataProcessing: boolean;
 	}): Promise<ApiResponse<void>> => {
 		const response = await apiClient.post<ApiResponse<void>>(
-			"/consent",
+			"/users/me/consent",
 			consent
 		);
 		return response.data;
