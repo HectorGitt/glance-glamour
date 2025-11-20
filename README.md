@@ -6,7 +6,7 @@
 
 ## How can I edit this code?
 
-There are several ways of editing your application.
+There are se- **`cloudbuild.yaml`**: Google Cloud Build configuration with timestamp-based image taggingeral ways of editing your application.
 
 **Use Lovable**
 
@@ -38,31 +38,175 @@ npm run dev
 
 **Edit a file directly in GitHub**
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+-   Navigate to the desired file(s).
+-   Click the "Edit" button (pencil icon) at the top right of the file view.
+-   Make your changes and commit the changes.
 
 **Use GitHub Codespaces**
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+-   Navigate to the main page of your repository.
+-   Click on the "Code" button (green button) near the top right.
+-   Select the "Codespaces" tab.
+-   Click on "New codespace" to launch a new Codespace environment.
+-   Edit files directly within the Codespace and commit and push your changes once you're done.
 
 ## What technologies are used for this project?
 
 This project is built with:
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+-   Vite
+-   TypeScript
+-   React
+-   shadcn-ui
+-   Tailwind CSS
 
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/727caa6e-1be8-411f-af53-10c8e07a6285) and click on Share -> Publish.
+
+## Docker Deployment
+
+This project includes Docker support for containerized deployment.
+
+### Building and Running with Docker
+
+```sh
+# Option 1: Using Docker directly
+docker build -t avera .
+docker run -p 4200:4200 avera
+
+# Option 2: Using Docker Compose (recommended)
+docker-compose up --build
+```
+
+The application will be available at `http://localhost:4200`.
+
+### Docker Configuration
+
+-   **Dockerfile**: Multi-stage build that creates a production-ready image
+-   **Base Image**: Node.js 18 with build-essential and Python for native dependencies
+-   **Build Process**: Optimized with layer caching and proper dependency installation
+-   **Output Directory**: Vite builds to `dist` directory
+-   **Port**: Application runs on port 4200 inside the container
+-   **Static Serving**: Uses `serve` package for production hosting
+
+## Google Cloud Deployment
+
+This project includes Google Cloud deployment configuration for automated CI/CD.
+
+### Prerequisites
+
+1. Install [Google Cloud CLI](https://cloud.google.com/sdk/docs/install)
+2. Authenticate: `gcloud auth login`
+3. Set your project: `gcloud config set project YOUR_PROJECT_ID`
+4. Copy `.env.deploy.example` to `.env.deploy` and update the values
+
+### Required IAM Permissions
+
+Your Google Cloud account or service account needs these roles:
+
+-   `Cloud Run Admin`
+-   `Cloud Build Editor`
+-   `Storage Admin` (for Container Registry)
+-   `Service Account User`
+
+Create a service account for CI/CD:
+
+```sh
+gcloud iam service-accounts create avera-deployer
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:avera-deployer@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/run.admin"
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:avera-deployer@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/cloudbuild.builds.editor"
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:avera-deployer@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/storage.admin"
+```
+
+### Automated Deployment
+
+#### Option 1: Using the deployment script (Recommended)
+
+**Linux/macOS:**
+
+```sh
+# Set your project ID
+export PROJECT_ID="your-project-id"
+
+# Make the script executable and run it
+chmod +x deploy.sh
+./deploy.sh
+```
+
+**Windows PowerShell:**
+
+```powershell
+# Set your project ID and run the script
+$env:PROJECT_ID = "your-project-id"
+.\deploy.ps1
+```
+
+#### Option 2: Manual deployment
+
+```sh
+# Build and submit to Cloud Build
+gcloud builds submit --config cloudbuild.yaml
+
+# Or build locally and deploy
+docker build -t gcr.io/YOUR_PROJECT_ID/avera .
+docker push gcr.io/YOUR_PROJECT_ID/avera
+gcloud run deploy avera --image gcr.io/YOUR_PROJECT_ID/avera --platform managed --region us-central1 --allow-unauthenticated --port 4200
+```
+
+#### Option 3: Automated GitHub Actions (CI/CD)
+
+Set up automatic deployment on every push to main branch:
+
+1. **Create GitHub Secrets:**
+
+    - `GCP_PROJECT_ID`: Your Google Cloud Project ID
+    - `GCP_SA_KEY`: Service Account JSON key with Cloud Run Admin and Storage Admin roles
+
+2. **The workflow will:**
+    - Build and push Docker image on every push to main
+    - Deploy to Cloud Run automatically
+    - Comment on commits with the service URL
+
+### Configuration Files
+
+-   **`cloudbuild.yaml`**: Google Cloud Build configuration for automated builds and deployments
+-   **`deploy.sh`**: Bash deployment script for Linux/macOS
+-   **`deploy.ps1`**: PowerShell deployment script for Windows
+-   **`.gcloudignore`**: Files to exclude from Google Cloud Build context
+-   **`.github/workflows/deploy.yml`**: GitHub Actions workflow for CI/CD
+-   **`.env.deploy.example`**: Environment configuration template
+
+### Services Used
+
+-   **Cloud Build**: Automated builds and deployments
+-   **Cloud Run**: Serverless container hosting
+-   **Container Registry**: Docker image storage
+
+### Environment Variables
+
+Set these environment variables before deployment:
+
+-   `PROJECT_ID`: Your Google Cloud Project ID
+-   `REGION`: Deployment region (default: us-central1)
+
+### Monitoring
+
+After deployment, monitor your application:
+
+```sh
+# View logs
+gcloud logs read --filter="resource.type=cloud_run_revision AND resource.labels.service_name=avera"
+
+# Get service URL
+gcloud run services describe avera --region=us-central1 --format="value(status.url)"
+```
 
 ## Can I connect a custom domain to my Lovable project?
 

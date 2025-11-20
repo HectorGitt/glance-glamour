@@ -43,9 +43,9 @@ const Welcome = () => {
 					</Button>
 					<Button
 						size="lg"
-						variant="hero"
+						variant="secondary"
 						onClick={() => navigate("/login")}
-						className="font-normal tracking-wide transition-smooth"
+						className="font-semibold tracking-wide transition-smooth"
 					>
 						Sign In
 					</Button>
