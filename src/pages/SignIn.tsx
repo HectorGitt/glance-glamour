@@ -91,7 +91,7 @@ const SignIn = () => {
 							</div>
 
 							{error && (
-								<div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+								<div className="text-sm text-red-500 bg-red-50 p-3 rounded-md border border-red-200">
 									{error}
 								</div>
 							)}

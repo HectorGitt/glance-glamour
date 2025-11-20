@@ -67,6 +67,9 @@ export interface UploadedModel {
 	fileName: string;
 	timestamp: number;
 	name?: string; // Optional custom name
+	thumbnailUrl?: string;
+	type?: string;
+	metadata?: any;
 }
 
 export interface OnboardingData {
@@ -103,7 +106,10 @@ interface PhotoStore {
 	generatedModels: GeneratedModel[];
 	currentModel: GeneratedModel | UploadedModel | null;
 	addGeneratedModel: (
-		model: Omit<GeneratedModel, "id" | "url" | "timestamp">
+		model: Omit<GeneratedModel, "id" | "url" | "timestamp"> & {
+			id?: string;
+			url?: string;
+		}
 	) => void;
 	setCurrentModel: (model: GeneratedModel | UploadedModel | null) => void;
 	removeGeneratedModel: (id: string) => void;
@@ -114,7 +120,10 @@ interface PhotoStore {
 	// Uploaded models
 	uploadedModels: UploadedModel[];
 	addUploadedModel: (
-		model: Omit<UploadedModel, "id" | "url" | "timestamp">
+		model: Omit<UploadedModel, "id" | "url" | "timestamp"> & {
+			id?: string;
+			url?: string;
+		}
 	) => void;
 	removeUploadedModel: (id: string) => void;
 	renameUploadedModel: (id: string, name: string) => void;
@@ -258,8 +267,8 @@ export const usePhotoStore = create<PhotoStore>()((set, get) => ({
 	},
 
 	addGeneratedModel: (modelData) => {
-		const id = `generated-model-${Date.now()}`;
-		const url = URL.createObjectURL(modelData.blob);
+		const id = modelData.id || `generated-model-${Date.now()}`;
+		const url = modelData.url || URL.createObjectURL(modelData.blob);
 		const model: GeneratedModel = {
 			...modelData,
 			id,
@@ -322,8 +331,8 @@ export const usePhotoStore = create<PhotoStore>()((set, get) => ({
 	},
 
 	addUploadedModel: (modelData) => {
-		const id = `uploaded-model-${Date.now()}`;
-		const url = URL.createObjectURL(modelData.blob);
+		const id = modelData.id || `uploaded-model-${Date.now()}`;
+		const url = modelData.url || URL.createObjectURL(modelData.blob);
 		const model: UploadedModel = {
 			...modelData,
 			id,

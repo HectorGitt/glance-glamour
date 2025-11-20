@@ -36,12 +36,13 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
 		try {
 			const response = await api.getUserModels({ limit: 50 });
 			set({
-				userModels: response.data,
+				userModels: response.data || [],
 				modelsLoading: false,
 				modelsError: null,
 			});
 		} catch (error: any) {
 			set({
+				userModels: [],
 				modelsLoading: false,
 				modelsError: error.message || "Failed to load models",
 			});
@@ -54,12 +55,13 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
 		try {
 			const response = await api.getClothingCatalog(params);
 			set({
-				clothingCatalog: response.data,
+				clothingCatalog: response.data || [],
 				clothingLoading: false,
 				clothingError: null,
 			});
 		} catch (error: any) {
 			set({
+				clothingCatalog: [],
 				clothingLoading: false,
 				clothingError:
 					error.message || "Failed to load clothing catalog",

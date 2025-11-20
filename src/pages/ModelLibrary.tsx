@@ -17,16 +17,22 @@ import {
 	Download,
 	Edit,
 	Loader2,
+	Eye,
+	EyeOff,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { usePhotoStore } from "@/lib/photoStore";
 import { useApiDataStore } from "@/lib/apiDataStore";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { ModelViewer } from "@/components/ModelViewer";
 
 const ModelLibrary = () => {
 	const navigate = useNavigate();
 	const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+	const [previewMode, setPreviewMode] = useState<"static" | "animated">(
+		"static"
+	);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [filterType, setFilterType] = useState<
 		"all" | "generated" | "uploaded"
@@ -57,19 +63,23 @@ const ModelLibrary = () => {
 	}, [loadUserModels]);
 
 	const allModels = [
-		...generatedModels.map((model) => ({
+		...(generatedModels || []).map((model) => ({
 			...model,
 			type: "generated" as const,
+			fileName: undefined,
 		})),
-		...uploadedModels.map((model) => ({
+		...(uploadedModels || []).map((model) => ({
 			...model,
 			type: "uploaded" as const,
+			source: "local" as const,
 		})),
-		...userModels.map((model) => ({
+		...(userModels || []).map((model) => ({
 			...model,
-			type: "api" as const,
+			type: "uploaded" as const,
+			source: "api" as const,
 			url: model.url,
 			name: model.filename,
+			fileName: model.filename,
 		})),
 	];
 
@@ -152,7 +162,7 @@ const ModelLibrary = () => {
 					}
 				}
 
-				const blob = new Blob(chunks);
+				const blob = new Blob(chunks as BlobPart[]);
 
 				// Add to photoStore
 				const { addUploadedModel } = usePhotoStore.getState();
@@ -192,7 +202,7 @@ const ModelLibrary = () => {
 			let downloadUrl = model.url;
 
 			// If it's an API model, use the URL directly
-			if (model.type === "api") {
+			if (model.source === "api" || model.type === "api") {
 				downloadUrl = model.url;
 			} else if (model.downloadUrl) {
 				// For generated models with downloadUrl
@@ -230,7 +240,7 @@ const ModelLibrary = () => {
 			}
 
 			// Create blob and download link
-			const blob = new Blob(chunks);
+			const blob = new Blob(chunks as BlobPart[]);
 			const link = document.createElement("a");
 			link.href = URL.createObjectURL(blob);
 			link.download =
@@ -261,11 +271,34 @@ const ModelLibrary = () => {
 		}
 	};
 
-	const handleDeleteModel = (model: any, type: "generated" | "uploaded") => {
+	const handleDeleteModel = async (
+		model: any,
+		type: "generated" | "uploaded" | "api"
+	) => {
 		if (type === "generated") {
 			removeGeneratedModel(model.id);
+		} else if (type === "uploaded") {
+			if (model.source === "api") {
+				try {
+					await api.deleteUserModel(model.id);
+					await loadUserModels();
+				} catch (error) {
+					console.error("Failed to delete model:", error);
+					toast.error("Failed to delete model");
+					return;
+				}
+			} else {
+				removeUploadedModel(model.id);
+			}
 		} else {
-			removeUploadedModel(model.id);
+			try {
+				await api.deleteUserModel(model.id);
+				await loadUserModels();
+			} catch (error) {
+				console.error("Failed to delete model:", error);
+				toast.error("Failed to delete model");
+				return;
+			}
 		}
 		toast.success("Model deleted successfully");
 	};
@@ -294,26 +327,22 @@ const ModelLibrary = () => {
 
 					<div className="flex items-center space-x-4">
 						{/* Upload Button */}
-						<label
-							htmlFor="model-upload"
-							className="cursor-pointer"
+						<Button
+							className="flex items-center space-x-2"
+							disabled={isUploading}
+							onClick={() =>
+								document.getElementById("model-upload")?.click()
+							}
 						>
-							<Button
-								className="flex items-center space-x-2"
-								disabled={isUploading}
-							>
-								{isUploading ? (
-									<Loader2 className="w-4 h-4 animate-spin" />
-								) : (
-									<Upload className="w-4 h-4" />
-								)}
-								<span>
-									{isUploading
-										? "Uploading..."
-										: "Upload Model"}
-								</span>
-							</Button>
-						</label>
+							{isUploading ? (
+								<Loader2 className="w-4 h-4 animate-spin" />
+							) : (
+								<Upload className="w-4 h-4" />
+							)}
+							<span>
+								{isUploading ? "Uploading..." : "Upload Model"}
+							</span>
+						</Button>
 						<input
 							id="model-upload"
 							type="file"
@@ -376,7 +405,11 @@ const ModelLibrary = () => {
 								</div>
 								<div>
 									<p className="text-2xl font-bold">
-										{uploadedModels.length}
+										{
+											allModels.filter(
+												(m) => m.type === "uploaded"
+											).length
+										}
 									</p>
 									<p className="text-sm text-muted-foreground">
 										Uploaded Models
@@ -469,6 +502,31 @@ const ModelLibrary = () => {
 							<List className="w-4 h-4" />
 						</Button>
 					</div>
+
+					<div className="flex items-center border rounded-lg">
+						<Button
+							variant={
+								previewMode === "static" ? "default" : "ghost"
+							}
+							size="sm"
+							onClick={() => setPreviewMode("static")}
+							className="rounded-r-none"
+						>
+							<EyeOff className="w-4 h-4 mr-1" />
+							Static
+						</Button>
+						<Button
+							variant={
+								previewMode === "animated" ? "default" : "ghost"
+							}
+							size="sm"
+							onClick={() => setPreviewMode("animated")}
+							className="rounded-l-none"
+						>
+							<Eye className="w-4 h-4 mr-1" />
+							Preview All
+						</Button>
+					</div>
 				</div>
 
 				{/* Models Grid/List */}
@@ -487,15 +545,17 @@ const ModelLibrary = () => {
 									: "Get started by uploading a 3D model or generating one from photos"}
 							</p>
 							<div className="flex justify-center space-x-4">
-								<label
-									htmlFor="empty-upload"
-									className="cursor-pointer"
+								<Button
+									disabled={isUploading}
+									onClick={() =>
+										document
+											.getElementById("empty-upload")
+											?.click()
+									}
 								>
-									<Button disabled={isUploading}>
-										<Upload className="w-4 h-4 mr-2" />
-										Upload Model
-									</Button>
-								</label>
+									<Upload className="w-4 h-4 mr-2" />
+									Upload Model
+								</Button>
 								<input
 									id="empty-upload"
 									type="file"
@@ -539,7 +599,15 @@ const ModelLibrary = () => {
 										// Grid View
 										<div className="space-y-4">
 											<div className="aspect-square bg-muted rounded-lg overflow-hidden flex items-center justify-center">
-												<User className="w-16 h-16 text-muted-foreground" />
+												{previewMode === "animated" &&
+												model.url ? (
+													<ModelViewer
+														modelUrl={model.url}
+														className="w-full h-full"
+													/>
+												) : (
+													<User className="w-16 h-16 text-muted-foreground" />
+												)}
 											</div>
 
 											<div className="space-y-2">
@@ -656,7 +724,15 @@ const ModelLibrary = () => {
 										// List View
 										<div className="flex items-center space-x-4">
 											<div className="w-16 h-16 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
-												<User className="w-8 h-8 text-muted-foreground" />
+												{previewMode === "animated" &&
+												model.url ? (
+													<ModelViewer
+														modelUrl={model.url}
+														className="w-full h-full"
+													/>
+												) : (
+													<User className="w-8 h-8 text-muted-foreground" />
+												)}
 											</div>
 
 											<div className="flex-1 min-w-0">

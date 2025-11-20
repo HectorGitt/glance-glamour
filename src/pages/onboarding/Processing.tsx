@@ -61,17 +61,17 @@ const Processing = () => {
 			toast.info("Uploading your image...");
 
 			// Upload the full body photo
-			const uploadResponse = await api.uploadUserImage(
-				fullBodyPhoto.blob,
-				"body",
-				{
-					width: 1024, // Default or actual dimensions if known
-					height: 1024,
-					size: fullBodyPhoto.blob.size,
-					format: fullBodyPhoto.blob.type.split("/")[1],
-					quality: "good",
-				}
-			);
+			const file = new File([fullBodyPhoto.blob], "body.jpg", {
+				type: fullBodyPhoto.blob.type,
+			});
+
+			const uploadResponse = await api.uploadUserImage(file, "body", {
+				width: 1024, // Default or actual dimensions if known
+				height: 1024,
+				size: fullBodyPhoto.blob.size,
+				format: fullBodyPhoto.blob.type.split("/")[1],
+				quality: "good",
+			});
 
 			const imageId = uploadResponse.data.id;
 
