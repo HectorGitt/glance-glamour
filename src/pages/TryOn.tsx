@@ -304,23 +304,22 @@ const TryOn = () => {
 					const result = resultResponse.data;
 
 					if (result.status === "completed") {
+						console.log("Try-on completed successfully:", result);
+
 						// Store the full result for displaying options
 						setLastTryOnResult(result);
 
-						// Fetch the actual image URL
-						const imageResponse = await api.getUserImage(
-							result.resultImageId
-						);
-						setTryOnResult(imageResponse.data.url);
+						// Prioritize showing the generated 3D model over the result image
+						let generatedModelHandled = false;
 
 						// Check if a new model was generated from this try-on
 						if (result.generated_model) {
-							// Add the generated model to the user's library
-							addGeneratedModel({
+							// Create the generated model object
+							const newGeneratedModel = {
 								id: result.generated_model.id,
 								url: result.generated_model.url,
 								downloadUrl: result.generated_model.url,
-								generationType: "textured", // Try-on generated models are textured
+								generationType: "textured" as const, // Try-on generated models are textured
 								hasTexture:
 									result.generated_model.metadata
 										?.hasTexture || true,
@@ -329,31 +328,35 @@ const TryOn = () => {
 									`Try-on Model ${result.generated_model.id.slice(
 										-4
 									)}`,
-								status: "completed",
-								timestamp: new Date(
-									result.generated_model.createdAt ||
-										Date.now()
-								).getTime(),
-							});
+								status: "completed" as const,
+								timestamp: Date.now(),
+							};
+
+							// Add the generated model to the user's library
+							addGeneratedModel(newGeneratedModel);
+
+							// Auto-select the new model to show it immediately
+							setCurrentModel(newGeneratedModel);
+							generatedModelHandled = true;
 
 							toast.success("Virtual try-on completed!", {
 								description:
-									"Your outfit looks amazing! A new personalized model has been added to your library.",
+									"Your personalized 3D model is ready! It's now active in your viewer.",
 							});
-						} else if (result.generated_model_id) {
+						} else if (result.generatedModelId) {
 							// Model was generated but details not included in response - fetch them
 							try {
 								const modelResponse = await api.getUserModel(
-									result.generated_model_id
+									result.generatedModelId
 								);
 								const generatedModel = modelResponse.data;
 
-								// Add the fetched model to the user's library
-								addGeneratedModel({
+								// Create the generated model object
+								const newGeneratedModel = {
 									id: generatedModel.id,
 									url: generatedModel.url,
 									downloadUrl: generatedModel.url,
-									generationType: "textured", // Try-on generated models are textured
+									generationType: "textured" as const, // Try-on generated models are textured
 									hasTexture:
 										generatedModel.metadata?.hasTexture ||
 										true,
@@ -362,28 +365,57 @@ const TryOn = () => {
 										`Try-on Model ${generatedModel.id.slice(
 											-4
 										)}`,
-									status: "completed",
-									timestamp: new Date(
-										generatedModel.createdAt || Date.now()
-									).getTime(),
-								});
+									status: "completed" as const,
+									timestamp: Date.now(),
+								};
+
+								// Add the fetched model to the user's library
+								addGeneratedModel(newGeneratedModel);
+
+								// Auto-select the new model to show it immediately
+								setCurrentModel(newGeneratedModel);
+								generatedModelHandled = true;
 
 								toast.success("Virtual try-on completed!", {
 									description:
-										"Your outfit looks amazing! A new personalized model has been added to your library.",
+										"Your personalized 3D model is ready! It's now active in your viewer.",
 								});
 							} catch (modelError) {
 								console.warn(
 									"Failed to fetch generated model details:",
 									modelError
 								);
+								generatedModelHandled = false;
+							}
+						}
+
+						// If no 3D model was generated/handled, try to show the result image
+						if (!generatedModelHandled && result.resultImageId) {
+							try {
+								const imageResponse = await api.getUserImage(
+									result.resultImageId
+								);
+								setTryOnResult(imageResponse.data.url);
+
 								toast.success("Virtual try-on completed!", {
-									description: "Your outfit looks amazing!",
+									description:
+										"Your outfit looks amazing! Check out the result.",
+								});
+							} catch (imageError) {
+								console.warn(
+									"Failed to fetch try-on result image:",
+									imageError
+								);
+								toast.success("Virtual try-on completed!", {
+									description:
+										"Your try-on has been processed successfully!",
 								});
 							}
-						} else {
+						} else if (!generatedModelHandled) {
+							// No model or image available
 							toast.success("Virtual try-on completed!", {
-								description: "Your outfit looks amazing!",
+								description:
+									"Your try-on has been processed successfully!",
 							});
 						}
 
@@ -696,7 +728,8 @@ const TryOn = () => {
 						Virtual Try-On
 					</h1>
 					<p className="text-muted-foreground text-sm">
-						Five seconds per look. More time for you.
+						Try on outfits and generate personalized 3D models
+						instantly.
 					</p>
 				</div>
 
@@ -713,6 +746,10 @@ const TryOn = () => {
 											alt="Try-on result"
 											className="w-full h-full object-cover"
 										/>
+										{/* Result Image Indicator */}
+										<div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-1 rounded text-xs text-white">
+											Result Preview
+										</div>
 									</div>
 									{/* Try-on details */}
 									{lastTryOnResult?.options && (
@@ -754,7 +791,7 @@ const TryOn = () => {
 									)}
 								</div>
 							) : currentModel ? (
-								<div className="w-full h-full">
+								<div className="w-full h-full relative">
 									<ModelViewer
 										modelUrl={currentModel.url}
 										status={
@@ -763,6 +800,10 @@ const TryOn = () => {
 												: ""
 										}
 									/>
+									{/* Model Indicator */}
+									<div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-1 rounded text-xs text-white">
+										3D Model
+									</div>
 								</div>
 							) : (
 								<div className="w-full h-full flex items-center justify-center bg-muted/20">
@@ -839,12 +880,12 @@ const TryOn = () => {
 										{isLoading ? (
 											<>
 												<Loader2 className="w-5 h-5 mr-2 animate-spin" />
-												Processing...
+												Generating 3D Model...
 											</>
 										) : (
 											<>
 												<Sparkles className="w-5 h-5 mr-2" />
-												Try On Now
+												Try On & Generate Model
 											</>
 										)}
 									</Button>

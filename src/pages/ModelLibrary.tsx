@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import React from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,8 @@ import {
 	Loader2,
 	Eye,
 	EyeOff,
+	ChevronLeft,
+	ChevronRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { usePhotoStore } from "@/lib/photoStore";
@@ -27,6 +29,7 @@ import { useApiDataStore } from "@/lib/apiDataStore";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { ModelViewer } from "@/components/ModelViewer";
+import { ModelPreviewModal } from "@/components/ModelPreviewModal";
 
 type LibraryModel = {
 	id: string;
@@ -59,6 +62,8 @@ const ModelLibrary = () => {
 	const [downloadProgress, setDownloadProgress] = useState<
 		Map<string, number>
 	>(new Map());
+	const [currentPage, setCurrentPage] = useState(1);
+	const [modelsPerPage] = useState(12);
 
 	const {
 		generatedModels,
@@ -141,6 +146,17 @@ const ModelLibrary = () => {
 		const matchesFilter = filterType === "all" || model.type === filterType;
 		return matchesSearch && matchesFilter;
 	});
+
+	// Pagination logic
+	const totalPages = Math.ceil(filteredModels.length / modelsPerPage);
+	const startIndex = (currentPage - 1) * modelsPerPage;
+	const endIndex = startIndex + modelsPerPage;
+	const paginatedModels = filteredModels.slice(startIndex, endIndex);
+
+	// Reset to first page when filters change
+	useEffect(() => {
+		setCurrentPage(1);
+	}, [searchQuery, filterType]);
 
 	const handleModelUpload = async (
 		event: React.ChangeEvent<HTMLInputElement>
@@ -634,7 +650,7 @@ const ModelLibrary = () => {
 				</div>
 
 				{/* Models Grid/List */}
-				{filteredModels.length === 0 ? (
+				{paginatedModels.length === 0 ? (
 					<Card className="border-border/50 bg-card/50 backdrop-blur-sm shadow-elegant">
 						<CardContent className="p-12 text-center">
 							<div className="w-24 h-24 mx-auto mb-6 bg-muted rounded-full flex items-center justify-center">
@@ -689,7 +705,7 @@ const ModelLibrary = () => {
 								: "space-y-4"
 						}
 					>
-						{filteredModels.map((model) => (
+						{paginatedModels.map((model) => (
 							<Card
 								key={model.id}
 								className={`border-border/50 bg-card/50 backdrop-blur-sm shadow-elegant hover:shadow-premium transition-all ${
@@ -703,15 +719,24 @@ const ModelLibrary = () => {
 										// Grid View
 										<div className="space-y-4">
 											<div className="aspect-square bg-muted rounded-lg overflow-hidden flex items-center justify-center">
-												{previewMode === "animated" &&
-												model.url ? (
-													<ModelViewer
-														modelUrl={model.url}
-														className="w-full h-full"
-													/>
-												) : (
-													<User className="w-16 h-16 text-muted-foreground" />
-												)}
+												<ModelPreviewModal
+													model={model}
+												>
+													<div className="w-full h-full cursor-pointer hover:bg-muted/50 transition-colors">
+														{previewMode ===
+															"animated" &&
+														model.url ? (
+															<ModelViewer
+																modelUrl={
+																	model.url
+																}
+																className="w-full h-full"
+															/>
+														) : (
+															<User className="w-16 h-16 text-muted-foreground" />
+														)}
+													</div>
+												</ModelPreviewModal>
 											</div>
 
 											<div className="space-y-2">
@@ -748,6 +773,18 @@ const ModelLibrary = () => {
 												</p>
 
 												<div className="flex items-center space-x-2 pt-2">
+													<ModelPreviewModal
+														model={model}
+													>
+														<Button
+															size="sm"
+															variant="outline"
+															className="flex-1"
+														>
+															<Eye className="w-4 h-4 mr-1" />
+															Preview
+														</Button>
+													</ModelPreviewModal>
 													{model.type ===
 													"generated" ? (
 														<Button
@@ -763,7 +800,6 @@ const ModelLibrary = () => {
 																	model
 																)
 															}
-															className="flex-1"
 														>
 															{currentModel?.id ===
 															model.id
@@ -771,12 +807,7 @@ const ModelLibrary = () => {
 																: "Use"}
 														</Button>
 													) : (
-														<div className="flex-1 text-center">
-															<span className="text-xs text-muted-foreground">
-																Not available
-																for try-on
-															</span>
-														</div>
+														<div className="text-center"></div>
 													)}
 													<div className="relative">
 														<Button
@@ -838,15 +869,24 @@ const ModelLibrary = () => {
 										// List View
 										<div className="flex items-center space-x-4">
 											<div className="w-16 h-16 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
-												{previewMode === "animated" &&
-												model.url ? (
-													<ModelViewer
-														modelUrl={model.url}
-														className="w-full h-full"
-													/>
-												) : (
-													<User className="w-8 h-8 text-muted-foreground" />
-												)}
+												<ModelPreviewModal
+													model={model}
+												>
+													<div className="w-full h-full cursor-pointer hover:bg-muted/50 transition-colors flex items-center justify-center">
+														{previewMode ===
+															"animated" &&
+														model.url ? (
+															<ModelViewer
+																modelUrl={
+																	model.url
+																}
+																className="w-full h-full"
+															/>
+														) : (
+															<User className="w-8 h-8 text-muted-foreground" />
+														)}
+													</div>
+												</ModelPreviewModal>
 											</div>
 
 											<div className="flex-1 min-w-0">
@@ -887,6 +927,17 @@ const ModelLibrary = () => {
 												</p>
 
 												<div className="flex items-center space-x-2">
+													<ModelPreviewModal
+														model={model}
+													>
+														<Button
+															size="sm"
+															variant="outline"
+														>
+															<Eye className="w-4 h-4 mr-1" />
+															Preview
+														</Button>
+													</ModelPreviewModal>
 													<Button
 														size="sm"
 														variant={
@@ -966,6 +1017,84 @@ const ModelLibrary = () => {
 								</CardContent>
 							</Card>
 						))}
+					</div>
+				)}
+
+				{/* Pagination Controls */}
+				{totalPages > 1 && (
+					<div className="flex items-center justify-between mt-8">
+						<div className="text-sm text-muted-foreground">
+							Showing {startIndex + 1}-
+							{Math.min(endIndex, filteredModels.length)} of{" "}
+							{filteredModels.length} models
+						</div>
+						<div className="flex items-center space-x-2">
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() =>
+									setCurrentPage((prev) =>
+										Math.max(1, prev - 1)
+									)
+								}
+								disabled={currentPage === 1}
+							>
+								<ChevronLeft className="w-4 h-4" />
+							</Button>
+
+							{/* Page numbers */}
+							<div className="flex items-center space-x-1">
+								{Array.from(
+									{ length: Math.min(5, totalPages) },
+									(_, i) => {
+										let pageNum;
+										if (totalPages <= 5) {
+											pageNum = i + 1;
+										} else if (currentPage <= 3) {
+											pageNum = i + 1;
+										} else if (
+											currentPage >=
+											totalPages - 2
+										) {
+											pageNum = totalPages - 4 + i;
+										} else {
+											pageNum = currentPage - 2 + i;
+										}
+
+										return (
+											<Button
+												key={pageNum}
+												variant={
+													currentPage === pageNum
+														? "default"
+														: "outline"
+												}
+												size="sm"
+												onClick={() =>
+													setCurrentPage(pageNum)
+												}
+												className="w-8 h-8 p-0"
+											>
+												{pageNum}
+											</Button>
+										);
+									}
+								)}
+							</div>
+
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() =>
+									setCurrentPage((prev) =>
+										Math.min(totalPages, prev + 1)
+									)
+								}
+								disabled={currentPage === totalPages}
+							>
+								<ChevronRight className="w-4 h-4" />
+							</Button>
+						</div>
 					</div>
 				)}
 			</div>
