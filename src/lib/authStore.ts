@@ -66,10 +66,12 @@ export const useAuthStore = create<AuthState>()(
 						response.data.refreshToken
 					);
 					localStorage.setItem("user", JSON.stringify(user));
-				} catch (error: any) {
+				} catch (error: unknown) {
+					const errorMessage =
+						error instanceof Error ? error.message : "Login failed";
 					set({
 						isLoading: false,
-						error: error.message || "Login failed",
+						error: errorMessage,
 					});
 					throw error;
 				}
@@ -98,10 +100,14 @@ export const useAuthStore = create<AuthState>()(
 						response.data.refreshToken
 					);
 					localStorage.setItem("user", JSON.stringify(user));
-				} catch (error: any) {
+				} catch (error: unknown) {
+					const errorMessage =
+						error instanceof Error
+							? error.message
+							: "Registration failed";
 					set({
 						isLoading: false,
-						error: error.message || "Registration failed",
+						error: errorMessage,
 					});
 					throw error;
 				}

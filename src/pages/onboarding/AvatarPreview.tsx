@@ -5,25 +5,32 @@ import { Card } from "@/components/ui/card";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, useGLTF } from "@react-three/drei";
 import { usePhotoStore } from "@/lib/photoStore";
+import { Object3D, Material, Mesh, Texture } from "three";
 import * as THREE from "three";
 
 // Simple GLB model loader that ensures textures have correct encoding
 function GLBModel({ url }: { url: string }) {
-	const gltf = useGLTF(url) as any;
+	const gltf = useGLTF(url);
 
 	useEffect(() => {
 		if (!gltf?.scene) return;
 
-		gltf.scene.traverse((child: any) => {
-			if (child.isMesh && child.material) {
+		gltf.scene.traverse((child: Object3D) => {
+			if (child instanceof Mesh && child.material) {
 				const mats = Array.isArray(child.material)
 					? child.material
 					: [child.material];
 
-				mats.forEach((mat: any) => {
+				mats.forEach((mat: Material) => {
 					// Ensure textures use sRGB for color/emissive maps
+					const material = mat as Material & {
+						map?: Texture;
+						emissiveMap?: Texture;
+					};
 					["map", "emissiveMap"].forEach((k) => {
-						const tex = mat[k];
+						const tex = material[k as keyof typeof material] as
+							| Texture
+							| undefined;
 						if (tex && tex.isTexture) {
 							tex.colorSpace = THREE.SRGBColorSpace;
 							tex.needsUpdate = true;

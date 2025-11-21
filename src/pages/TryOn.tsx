@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,11 +14,32 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { api, ClothingItem } from "@/lib/api";
+import {
+	api,
+	ClothingItem,
+	UserModel,
+	ApiResponse,
+	TryOnResult,
+} from "@/lib/api";
+import apiClient from "@/lib/api";
 import { usePhotoStore } from "@/lib/photoStore";
 import { useApiDataStore } from "@/lib/apiDataStore";
 import { useApiErrorHandler } from "@/hooks/use-api-error";
 import { ModelViewer } from "@/components/ModelViewer";
+import type { GeneratedModel, UploadedModel } from "@/lib/photoStore";
+
+type LibraryModel = {
+	id: string;
+	url?: string;
+	downloadUrl?: string;
+	name?: string;
+	fileName?: string;
+	type: "generated" | "uploaded";
+	source?: "local" | "api";
+	generationType?: string;
+	hasTexture?: boolean;
+	timestamp?: number;
+};
 
 const TryOn = () => {
 	const navigate = useNavigate();
@@ -29,15 +50,21 @@ const TryOn = () => {
 	const [isLoading, setIsLoading] = useState(false);
 	const [isUploading, setIsUploading] = useState(false);
 	const [tryOnResult, setTryOnResult] = useState<string | null>(null);
+	const [lastTryOnResult, setLastTryOnResult] = useState<TryOnResult | null>(
+		null
+	);
 
 	const {
 		generatedModels,
 		uploadedModels,
 		currentModel,
 		addUploadedModel,
+		addGeneratedModel,
 		setCurrentModel,
 		removeUploadedModel,
 		removeGeneratedModel,
+		fullBodyPhoto,
+		setFullBodyPhoto,
 	} = usePhotoStore();
 
 	const {
@@ -47,30 +74,109 @@ const TryOn = () => {
 		clothingLoading,
 		loadUserModels,
 		loadClothingCatalog,
+		tryOnHistory,
+		loadTryOnHistory,
 	} = useApiDataStore();
 
 	// Load data from API on component mount
 	useEffect(() => {
 		loadUserModels();
 		loadClothingCatalog({ limit: 20 });
-	}, [loadUserModels, loadClothingCatalog]);
+		loadTryOnHistory();
+	}, [loadUserModels, loadClothingCatalog, loadTryOnHistory]);
 
-	const allModels: any[] = [
-		...(generatedModels || []).map((model) => ({
-			...model,
-			type: "generated" as const,
-		})),
-		...(uploadedModels || []).map((model) => ({
-			...model,
-			type: "uploaded" as const,
-			source: "local" as const,
-		})),
-		...(userModels || []).map((model) => ({
-			...model,
-			type: "uploaded" as const,
-			source: "api" as const,
-		})),
-	];
+	const allModels: LibraryModel[] = useMemo(
+		() =>
+			[
+				...(generatedModels || []).map((model) => ({
+					...model,
+					type: "generated" as const,
+				})),
+				...(uploadedModels || []).map((model) => ({
+					...model,
+					type: "uploaded" as const,
+					source: "local" as const,
+				})),
+				...(userModels || []).map((model) => ({
+					...model,
+					type: (model.type === "generated" || model.type === "avatar"
+						? "generated"
+						: "uploaded") as "generated" | "uploaded",
+					source: "api" as const,
+					url: model.url,
+					name: model.filename,
+					fileName: model.filename,
+				})),
+			].sort((a, b) => {
+				// Sort by timestamp or createdAt, newest first
+				const getTime = (model: LibraryModel) => {
+					if (model.timestamp) {
+						return model.timestamp;
+					}
+					const apiModel = model as LibraryModel & {
+						createdAt?: string;
+					};
+					if (apiModel.createdAt) {
+						return new Date(apiModel.createdAt).getTime();
+					}
+					return 0;
+				};
+
+				const aTime = getTime(a);
+				const bTime = getTime(b);
+				return bTime - aTime; // Newest first
+			}),
+		[generatedModels, uploadedModels, userModels]
+	);
+
+	// Auto-select default model if none is selected
+	useEffect(() => {
+		if (!currentModel && allModels.length > 0) {
+			// Only select generated models for try-on
+			const defaultModel = allModels.find((m) => m.type === "generated");
+
+			if (defaultModel) {
+				// Use the same logic as handleUseModel
+				let actualModel: GeneratedModel | UploadedModel | null = null;
+
+				if (defaultModel.type === "generated") {
+					actualModel =
+						generatedModels.find((m) => m.id === defaultModel.id) ||
+						null;
+				} else if (defaultModel.type === "uploaded") {
+					if (defaultModel.source === "local") {
+						actualModel =
+							uploadedModels.find(
+								(m) => m.id === defaultModel.id
+							) || null;
+					} else if (defaultModel.source === "api") {
+						// For API models, create a compatible UploadedModel
+						actualModel = {
+							id: defaultModel.id,
+							blob: new Blob(), // Empty blob for API models
+							url: defaultModel.url || "",
+							fileName:
+								defaultModel.fileName ||
+								defaultModel.name ||
+								`model-${defaultModel.id}`,
+							timestamp: defaultModel.timestamp || Date.now(),
+							name: defaultModel.name,
+						};
+					}
+				}
+
+				if (actualModel) {
+					setCurrentModel(actualModel);
+				}
+			}
+		}
+	}, [
+		currentModel,
+		allModels,
+		generatedModels,
+		uploadedModels,
+		setCurrentModel,
+	]);
 
 	const handleTryOn = async () => {
 		if (!currentModel) {
@@ -83,19 +189,107 @@ const TryOn = () => {
 			return;
 		}
 
+		// Check if this is a generated model (has generationType property)
+		const isGeneratedModel = "generationType" in currentModel;
+
+		let userImageId: string | undefined;
+
+		if (isGeneratedModel) {
+			// For generated models, use modelId - backend will retrieve the associated image
+			toast.info("Using your generated model for try-on...");
+		} else {
+			// For uploaded models, require photo upload
+			if (!fullBodyPhoto || !fullBodyPhoto.blob) {
+				toast.error(
+					"Please upload a photo of yourself to try on outfits",
+					{
+						description:
+							"Click the button below to upload your photo.",
+						action: {
+							label: "Upload Photo",
+							onClick: () =>
+								document
+									.getElementById("tryon-photo-upload")
+									?.click(),
+						},
+					}
+				);
+				// Add a hidden file input for photo upload
+				setTimeout(() => {
+					const input = document.getElementById(
+						"tryon-photo-upload"
+					) as HTMLInputElement;
+					if (input) {
+						input.click();
+					}
+				}, 1000);
+				return;
+			}
+
+			// Upload the full body photo to get an image ID for try-on
+			try {
+				toast.info("Preparing your image for try-on...");
+				const file = new File([fullBodyPhoto.blob], "body.jpg", {
+					type: fullBodyPhoto.blob.type,
+				});
+
+				console.log("Uploading full body photo for try-on:", {
+					size: fullBodyPhoto.blob.size,
+					type: fullBodyPhoto.blob.type,
+					hasBlob: !!fullBodyPhoto.blob,
+				});
+
+				const uploadResponse = await api.uploadUserImage(file, "body", {
+					width: 1024,
+					height: 1024,
+					size: fullBodyPhoto.blob.size,
+					format: fullBodyPhoto.blob.type.split("/")[1],
+					quality: "good",
+				});
+
+				userImageId = uploadResponse.data.id;
+				console.log(
+					"Successfully uploaded image, got ID:",
+					userImageId
+				);
+				toast.success("Image prepared for try-on!");
+			} catch (error) {
+				console.error("Failed to upload user image for try-on:", error);
+				toast.error(
+					"Failed to prepare your image for try-on. Please try again."
+				);
+				return;
+			}
+		}
+
 		setIsLoading(true);
 		try {
-			// Use real API for try-on
-			const tryOnRequest = {
-				userImageId: currentModel.id, // Using model ID as image ID for now
-				clothingImageId: selectedOutfit.id,
-				options: {
-					preservePose: true,
-					enhanceQuality: true,
-				},
-			};
-
-			const response = await api.createTryOn(tryOnRequest);
+			let response;
+			if (isGeneratedModel) {
+				// Use new endpoint for generated models
+				response = await api.createTryOn(
+					currentModel.id,
+					selectedOutfit.id,
+					{
+						preservePose: true,
+						enhanceQuality: true,
+					}
+				);
+			} else {
+				// For uploaded photos, use legacy endpoint
+				const tryOnRequest = {
+					userImageId: userImageId,
+					clothingImageId: selectedOutfit.id,
+					options: {
+						preservePose: true,
+						enhanceQuality: true,
+					},
+				};
+				response = await apiClient.post<ApiResponse<TryOnResult>>(
+					"/tryon",
+					tryOnRequest
+				);
+			}
 			const tryOnResult = response.data;
 
 			// Poll for completion
@@ -110,15 +304,89 @@ const TryOn = () => {
 					const result = resultResponse.data;
 
 					if (result.status === "completed") {
+						// Store the full result for displaying options
+						setLastTryOnResult(result);
+
 						// Fetch the actual image URL
 						const imageResponse = await api.getUserImage(
 							result.resultImageId
 						);
 						setTryOnResult(imageResponse.data.url);
 
-						toast.success("Virtual try-on completed!", {
-							description: "Your outfit looks amazing!",
-						});
+						// Check if a new model was generated from this try-on
+						if (result.generated_model) {
+							// Add the generated model to the user's library
+							addGeneratedModel({
+								id: result.generated_model.id,
+								url: result.generated_model.url,
+								downloadUrl: result.generated_model.url,
+								generationType: "textured", // Try-on generated models are textured
+								hasTexture:
+									result.generated_model.metadata
+										?.hasTexture || true,
+								name:
+									result.generated_model.filename ||
+									`Try-on Model ${result.generated_model.id.slice(
+										-4
+									)}`,
+								status: "completed",
+								timestamp: new Date(
+									result.generated_model.createdAt ||
+										Date.now()
+								).getTime(),
+							});
+
+							toast.success("Virtual try-on completed!", {
+								description:
+									"Your outfit looks amazing! A new personalized model has been added to your library.",
+							});
+						} else if (result.generated_model_id) {
+							// Model was generated but details not included in response - fetch them
+							try {
+								const modelResponse = await api.getUserModel(
+									result.generated_model_id
+								);
+								const generatedModel = modelResponse.data;
+
+								// Add the fetched model to the user's library
+								addGeneratedModel({
+									id: generatedModel.id,
+									url: generatedModel.url,
+									downloadUrl: generatedModel.url,
+									generationType: "textured", // Try-on generated models are textured
+									hasTexture:
+										generatedModel.metadata?.hasTexture ||
+										true,
+									name:
+										generatedModel.filename ||
+										`Try-on Model ${generatedModel.id.slice(
+											-4
+										)}`,
+									status: "completed",
+									timestamp: new Date(
+										generatedModel.createdAt || Date.now()
+									).getTime(),
+								});
+
+								toast.success("Virtual try-on completed!", {
+									description:
+										"Your outfit looks amazing! A new personalized model has been added to your library.",
+								});
+							} catch (modelError) {
+								console.warn(
+									"Failed to fetch generated model details:",
+									modelError
+								);
+								toast.success("Virtual try-on completed!", {
+									description: "Your outfit looks amazing!",
+								});
+							}
+						} else {
+							toast.success("Virtual try-on completed!", {
+								description: "Your outfit looks amazing!",
+							});
+						}
+
 						setIsLoading(false);
 					} else if (result.status === "failed") {
 						throw new Error(result.error || "Try-on failed");
@@ -177,6 +445,42 @@ const TryOn = () => {
 		}
 	};
 
+	const handlePhotoUpload = async (
+		event: React.ChangeEvent<HTMLInputElement>
+	) => {
+		const file = event.target.files?.[0];
+		if (!file) return;
+
+		// Check if it's an image file
+		if (!file.type.startsWith("image/")) {
+			toast.error("Please select an image file");
+			return;
+		}
+
+		// Check file size (limit to 10MB for images)
+		if (file.size > 10 * 1024 * 1024) {
+			toast.error("Image file size must be less than 10MB");
+			return;
+		}
+
+		try {
+			// Set the full body photo in the store
+			setFullBodyPhoto({
+				blob: file,
+			});
+
+			toast.success("Photo uploaded successfully!", {
+				description: "You can now try on outfits with your photo.",
+			});
+		} catch (error) {
+			console.error("Photo upload error:", error);
+			toast.error("Failed to upload photo");
+		}
+
+		// Reset the input
+		event.target.value = "";
+	};
+
 	const handleModelUpload = async (
 		event: React.ChangeEvent<HTMLInputElement>
 	) => {
@@ -205,29 +509,174 @@ const TryOn = () => {
 		setIsUploading(true);
 
 		try {
-			// Upload to API
-			const response = await api.uploadUserModel(file, "custom", [], {
-				size: file.size,
-				format: fileName.endsWith(".glb") ? "glb" : "gltf",
-				generationType: "single",
-				hasTexture: true,
-			});
+			// Check if we have a full body image for auto-generation
+			let associatedImages: string[] = [];
+			if (fullBodyPhoto && fullBodyPhoto.blob) {
+				try {
+					toast.info(
+						"Preparing associated image for model enhancement..."
+					);
+					const imageFile = new File(
+						[fullBodyPhoto.blob],
+						"body.jpg",
+						{
+							type: fullBodyPhoto.blob.type,
+						}
+					);
 
-			const uploadedModel = response.data;
+					const imageUploadResponse = await api.uploadUserImage(
+						imageFile,
+						"body",
+						{
+							width: 1024,
+							height: 1024,
+							size: fullBodyPhoto.blob.size,
+							format: fullBodyPhoto.blob.type.split("/")[1],
+							quality: "good",
+						}
+					);
 
-			// Add to local store
-			addUploadedModel({
-				id: uploadedModel.id,
-				blob: file,
-				fileName: file.name,
-				name: file.name.replace(/\.(glb|gltf)$/i, ""),
-				url: uploadedModel.url,
-				thumbnailUrl: uploadedModel.thumbnailUrl,
-				type: uploadedModel.type,
-				metadata: uploadedModel.metadata,
-			});
+					associatedImages = [imageUploadResponse.data.id];
+					console.log(
+						"Associated image uploaded:",
+						imageUploadResponse.data.id
+					);
+				} catch (imageError) {
+					console.warn(
+						"Failed to upload associated image, continuing without it:",
+						imageError
+					);
+				}
+			}
 
-			toast.success("Model uploaded successfully!");
+			// Upload model with auto-generation
+			toast.info("Uploading and processing 3D model...");
+			const response = await api.uploadUserModel(
+				file,
+				"avatar", // Use "avatar" type for generation-enabled uploads
+				associatedImages, // Associate with uploaded image if available
+				{
+					size: file.size,
+					format: fileName.endsWith(".glb") ? "glb" : "gltf",
+					generationType: "textured", // Enable textured generation
+					hasTexture: true,
+					// Additional generation options
+					autoGenerate: true,
+					enhanceQuality: true,
+				}
+			);
+
+			const result = response.data as
+				| UserModel
+				| { model: UserModel; generated_model?: UserModel };
+
+			// Handle both uploaded and generated models
+			let modelsAdded = 0;
+
+			// Check if result has model property (enhanced upload response)
+			if ("model" in result && result.model) {
+				const uploadedModel = result.model;
+				addUploadedModel({
+					id: uploadedModel.id,
+					blob: file,
+					fileName: file.name,
+					name: file.name.replace(/\.(glb|gltf)$/i, ""),
+					url: uploadedModel.url,
+					thumbnailUrl: uploadedModel.thumbnailUrl,
+					type: uploadedModel.type,
+					metadata: uploadedModel.metadata,
+				});
+				modelsAdded++;
+				console.log("Uploaded model:", uploadedModel);
+			} else if ("id" in result) {
+				// Result is directly a UserModel
+				const uploadedModel = result;
+				addUploadedModel({
+					id: uploadedModel.id,
+					blob: file,
+					fileName: file.name,
+					name: file.name.replace(/\.(glb|gltf)$/i, ""),
+					url: uploadedModel.url,
+					thumbnailUrl: uploadedModel.thumbnailUrl,
+					type: uploadedModel.type,
+					metadata: uploadedModel.metadata,
+				});
+				modelsAdded++;
+				console.log("Uploaded model:", uploadedModel);
+			}
+
+			// Add the generated model if available
+			if ("generated_model" in result && result.generated_model) {
+				addGeneratedModel({
+					id: result.generated_model.id,
+					url: result.generated_model.url,
+					downloadUrl: result.generated_model.url,
+					generationType: "textured",
+					hasTexture: true,
+					name: `Enhanced ${file.name.replace(/\.(glb|gltf)$/i, "")}`,
+					status: "completed",
+				});
+				modelsAdded++;
+				console.log(
+					"Generated enhanced model:",
+					result.generated_model
+				);
+			}
+
+			// Success message based on what was added
+			if (modelsAdded === 2) {
+				toast.success(
+					"Model uploaded and enhanced version generated!",
+					{
+						description:
+							"Both original and AI-enhanced versions are now available.",
+					}
+				);
+			} else if (modelsAdded === 1) {
+				toast.success("Model uploaded successfully!");
+			} else {
+				toast.success("Model processed successfully!");
+			}
+
+			// Auto-select the generated model if available, otherwise the uploaded one
+			if ("generated_model" in result && result.generated_model) {
+				setCurrentModel({
+					id: result.generated_model.id,
+					url: result.generated_model.url,
+					downloadUrl: result.generated_model.url,
+					generationType: "textured",
+					hasTexture: true,
+					name: `Enhanced ${file.name.replace(/\.(glb|gltf)$/i, "")}`,
+					status: "completed",
+					timestamp: Date.now(),
+				});
+			} else if ("model" in result && result.model) {
+				const uploadedModel = result.model;
+				setCurrentModel({
+					id: uploadedModel.id,
+					blob: file,
+					fileName: file.name,
+					name: file.name.replace(/\.(glb|gltf)$/i, ""),
+					url: uploadedModel.url,
+					thumbnailUrl: uploadedModel.thumbnailUrl,
+					type: uploadedModel.type,
+					metadata: uploadedModel.metadata,
+					timestamp: Date.now(),
+				});
+			} else if ("id" in result) {
+				const uploadedModel = result;
+				setCurrentModel({
+					id: uploadedModel.id,
+					blob: file,
+					fileName: file.name,
+					name: file.name.replace(/\.(glb|gltf)$/i, ""),
+					url: uploadedModel.url,
+					thumbnailUrl: uploadedModel.thumbnailUrl,
+					type: uploadedModel.type,
+					metadata: uploadedModel.metadata,
+					timestamp: Date.now(),
+				});
+			}
 		} catch (error) {
 			handleError(error, "Uploading model");
 		} finally {
@@ -257,11 +706,53 @@ const TryOn = () => {
 					<div className="w-1/2 flex flex-col pr-2">
 						<Card className="flex-1 border-border/50 bg-card/50 backdrop-blur-sm shadow-premium overflow-hidden relative min-h-0">
 							{tryOnResult ? (
-								<img
-									src={tryOnResult}
-									alt="Try-on result"
-									className="w-full h-full object-cover"
-								/>
+								<div className="w-full h-full flex flex-col">
+									<div className="flex-1 relative">
+										<img
+											src={tryOnResult}
+											alt="Try-on result"
+											className="w-full h-full object-cover"
+										/>
+									</div>
+									{/* Try-on details */}
+									{lastTryOnResult?.options && (
+										<div className="p-3 bg-black/60 backdrop-blur-sm border-t border-white/10">
+											<h4 className="text-xs font-medium text-white mb-2">
+												Try-on Details
+											</h4>
+											<div className="text-xs text-white/80 space-y-1">
+												{lastTryOnResult.options
+													.model_id && (
+													<div>
+														Model:{" "}
+														{lastTryOnResult.options.model_id.slice(
+															-8
+														)}
+													</div>
+												)}
+												{lastTryOnResult.options
+													.cloth_id && (
+													<div>
+														Clothing:{" "}
+														{lastTryOnResult.options.cloth_id.slice(
+															-8
+														)}
+													</div>
+												)}
+												{lastTryOnResult.options
+													.source && (
+													<div>
+														Source:{" "}
+														{
+															lastTryOnResult
+																.options.source
+														}
+													</div>
+												)}
+											</div>
+										</div>
+									)}
+								</div>
 							) : currentModel ? (
 								<div className="w-full h-full">
 									<ModelViewer
@@ -364,6 +855,14 @@ const TryOn = () => {
 
 					{/* Right Half - Controls and Catalog */}
 					<div className="w-1/2 flex flex-col pl-2 space-y-4 overflow-y-auto">
+						{/* Hidden inputs */}
+						<input
+							id="tryon-photo-upload"
+							type="file"
+							accept="image/*"
+							onChange={handlePhotoUpload}
+							className="hidden"
+						/>
 						{/* Current Model Display */}
 						<Card className="border-border/50 bg-card/50 backdrop-blur-sm shadow-premium">
 							<CardHeader className="pb-3">
@@ -382,18 +881,30 @@ const TryOn = () => {
 													)}`}
 											</h4>
 											<p className="text-xs text-muted-foreground">
-												{"generationType" in
-												currentModel
+												{currentModel &&
+												"generationType" in currentModel
 													? currentModel.generationType
 													: "Uploaded"}{" "}
 												•{" "}
-												{"hasTexture" in currentModel
+												{currentModel &&
+												"hasTexture" in currentModel
 													? currentModel.hasTexture
 														? "Mesh + Texture"
 														: "Mesh Only"
 													: "Uploaded"}
 											</p>
 										</div>
+										<Button
+											variant="outline"
+											size="sm"
+											className="w-full"
+											onClick={() =>
+												navigate("/models/library")
+											}
+										>
+											<User className="w-3 h-3 mr-2" />
+											Change Model
+										</Button>
 									</div>
 								) : (
 									<div className="text-center py-6">
@@ -524,26 +1035,36 @@ const TryOn = () => {
 										</div>
 									</div>
 								)}
-								{/* Uploaded Models */}
-								{uploadedModels.length > 0 && (
+								{/* API Generated Models */}
+								{userModels.filter(
+									(m) =>
+										m.type === "generated" ||
+										m.type === "avatar"
+								).length > 0 && (
 									<div className="border-t pt-3">
 										<h4 className="text-xs font-medium mb-2">
-											Uploaded Models
+											API Generated Models
 										</h4>
 										<div className="space-y-1 max-h-24 overflow-y-auto">
-											{(uploadedModels || []).map(
-												(model) => (
+											{userModels
+												.filter(
+													(m) =>
+														m.type ===
+															"generated" ||
+														m.type === "avatar"
+												)
+												.map((model) => (
 													<div
 														key={model.id}
 														className="flex items-center justify-between p-2 bg-muted/50 rounded text-xs"
 													>
 														<div className="flex-1 min-w-0">
 															<p className="font-medium truncate">
-																{model.name ||
-																	model.fileName}
+																{model.filename ||
+																	model.id}
 															</p>
 															<p className="text-muted-foreground">
-																Uploaded
+																{model.type}
 															</p>
 														</div>
 														<Button
@@ -554,18 +1075,38 @@ const TryOn = () => {
 																	? "default"
 																	: "ghost"
 															}
-															onClick={() =>
+															onClick={() => {
+																// Create compatible model for API models
+																const apiModel =
+																	{
+																		id: model.id,
+																		url: model.url,
+																		downloadUrl:
+																			model.url,
+																		generationType:
+																			"single" as const,
+																		hasTexture:
+																			model
+																				.metadata
+																				?.hasTexture ||
+																			false,
+																		name: model.filename,
+																		status: "completed" as const,
+																		timestamp:
+																			new Date(
+																				model.createdAt
+																			).getTime(),
+																	};
 																setCurrentModel(
-																	model
-																)
-															}
+																	apiModel
+																);
+															}}
 															className="h-5 px-2 text-xs ml-1"
 														>
 															Use
 														</Button>
 													</div>
-												)
-											)}
+												))}
 										</div>
 									</div>
 								)}
@@ -656,7 +1197,9 @@ const TryOn = () => {
 										</div>
 									</div>
 									<div className="p-2 bg-muted/50 rounded-lg">
-										<p className="text-lg font-bold">12</p>
+										<p className="text-lg font-bold">
+											{tryOnHistory.length}
+										</p>
 										<p className="text-xs text-muted-foreground">
 											Try-Ons
 										</p>

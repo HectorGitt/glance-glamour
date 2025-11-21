@@ -13,7 +13,6 @@ import ReviewPhotos from "./pages/onboarding/ReviewPhotos";
 import BodyMeasures from "./pages/onboarding/BodyMeasures";
 import FullBodyUpload from "./pages/onboarding/FullBodyUpload";
 import Processing from "./pages/onboarding/Processing";
-import AvatarPreview from "./pages/onboarding/AvatarPreview";
 import SignIn from "./pages/SignIn";
 import SignUp from "./pages/SignUp";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
@@ -59,10 +58,6 @@ const AppContent = () => {
 					element={<FullBodyUpload />}
 				/>
 				<Route path="/onboarding/processing" element={<Processing />} />
-				<Route
-					path="/onboarding/avatar-preview"
-					element={<AvatarPreview />}
-				/>
 				<Route path="/try-on" element={<TryOn />} />
 				<Route path="/models/library" element={<ModelLibrary />} />
 				{/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

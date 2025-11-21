@@ -7,16 +7,16 @@ import axios, {
 
 // API Configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
-const API_TIMEOUT = 30000; // 30 seconds
+const API_TIMEOUT = 300000; // 5 minutes (for model generation)
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
 
 // Helper function for graceful error handling
-const handleApiError = (error: any, operation: string): never => {
+const handleApiError = (error: unknown, operation: string): never => {
 	console.error(`API Error in ${operation}:`, error);
 
 	// If it's an Axios error with response
-	if (error.response) {
+	if (axios.isAxiosError(error) && error.response) {
 		const { status, data } = error.response;
 		const message = data?.message || data?.error || `HTTP ${status} error`;
 		const errorCode = data?.error?.code || "UNKNOWN_ERROR";
@@ -55,26 +55,31 @@ const handleApiError = (error: any, operation: string): never => {
 	}
 
 	// If it's a network error
-	if (error.code === "NETWORK_ERROR" || !error.response) {
+	if (
+		axios.isAxiosError(error) &&
+		(error.code === "NETWORK_ERROR" || !error.response)
+	) {
 		throw new Error(
 			"Network error. Please check your connection and try again."
 		);
 	}
 
 	// If it's a timeout
-	if (error.code === "ECONNABORTED") {
+	if (axios.isAxiosError(error) && error.code === "ECONNABORTED") {
 		throw new Error("Request timed out. Please try again.");
 	}
 
 	// Generic error
-	throw new Error(
-		error.message || "An unexpected error occurred. Please try again."
-	);
+	const errorMessage =
+		error instanceof Error
+			? error.message
+			: "An unexpected error occurred. Please try again.";
+	throw new Error(errorMessage);
 };
 
 // Enhanced error handler that returns error info instead of throwing
-export const getApiErrorInfo = (error: any) => {
-	if (error.response) {
+export const getApiErrorInfo = (error: unknown) => {
+	if (axios.isAxiosError(error) && error.response) {
 		const { status, data } = error.response;
 		const message = data?.message || data?.error || `HTTP ${status} error`;
 		const errorCode = data?.error?.code || "UNKNOWN_ERROR";
@@ -93,7 +98,10 @@ export const getApiErrorInfo = (error: any) => {
 	}
 
 	// Network or timeout errors
-	if (error.code === "NETWORK_ERROR" || !error.response) {
+	if (
+		axios.isAxiosError(error) &&
+		(error.code === "NETWORK_ERROR" || !error.response)
+	) {
 		return {
 			status: null,
 			message:
@@ -108,7 +116,7 @@ export const getApiErrorInfo = (error: any) => {
 		};
 	}
 
-	if (error.code === "ECONNABORTED") {
+	if (axios.isAxiosError(error) && error.code === "ECONNABORTED") {
 		return {
 			status: null,
 			message: "Request timed out. Please try again.",
@@ -122,10 +130,13 @@ export const getApiErrorInfo = (error: any) => {
 		};
 	}
 
+	const errorMessage =
+		error instanceof Error
+			? error.message
+			: "An unexpected error occurred. Please try again.";
 	return {
 		status: null,
-		message:
-			error.message || "An unexpected error occurred. Please try again.",
+		message: errorMessage,
 		errorCode: "UNKNOWN_ERROR",
 		isAuthError: false,
 		isNetworkError: false,
@@ -247,7 +258,7 @@ apiClient.interceptors.response.use(
 );
 
 // API Response type
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
 	data: T;
 	message?: string;
 	success: boolean;
@@ -326,22 +337,33 @@ export interface UserModel {
 	filename: string;
 	url: string;
 	thumbnailUrl?: string;
-	type: "avatar" | "tryon" | "custom";
+	type: "avatar" | "tryon" | "custom" | "generated";
 	associatedImages: string[]; // UserImage IDs
 	metadata: {
 		size: number;
 		format: string;
-		generationType: "single" | "multiview";
+		generationType: "single" | "multiview" | "textured";
 		hasTexture: boolean;
 		processingTime?: number;
+		autoGenerate?: boolean;
+		enhanceQuality?: boolean;
+		// New try-on generated model metadata
+		source_tryon?: string;
+		cloth_id?: string;
+		model_id?: string;
+		seed_used?: number;
+		mesh_stats?: any;
+		generated_from_tryon?: boolean;
 	};
+	is_active?: boolean; // New field for try-on generated models
 	createdAt: string;
 	updatedAt: string;
 }
 
 // Virtual Try-On Types
 export interface TryOnRequest {
-	userImageId: string;
+	userImageId?: string; // For uploaded photos
+	modelId?: string; // For generated models (backend retrieves associated image)
 	clothingImageId: string;
 	options?: {
 		preservePose: boolean;
@@ -357,9 +379,16 @@ export interface TryOnResult {
 	clothingImageId: string;
 	resultImageId: string;
 	generatedModelId?: string;
+	generated_model?: UserModel; // NEW: Full model details included
 	status: "processing" | "completed" | "failed";
 	processingTime?: number;
 	error?: string;
+	options?: {
+		// NEW: Try-on options used
+		model_id: string;
+		cloth_id: string;
+		source: string;
+	};
 	createdAt: string;
 }
 
@@ -628,12 +657,16 @@ export const api = {
 		associatedImages?: string[],
 		metadata?: Partial<UserModel["metadata"]>,
 		onProgress?: (progress: number) => void
-	): Promise<ApiResponse<UserModel>> => {
+	): Promise<
+		ApiResponse<
+			UserModel | { model: UserModel; generated_model?: UserModel }
+		>
+	> => {
 		try {
 			const formData = new FormData();
 			formData.append("file", file);
 			formData.append("type", type);
-			if (associatedImages) {
+			if (associatedImages && associatedImages.length > 0) {
 				formData.append(
 					"associatedImages",
 					JSON.stringify(associatedImages)
@@ -643,22 +676,28 @@ export const api = {
 				formData.append("metadata", JSON.stringify(metadata));
 			}
 
-			const response = await apiClient.post<ApiResponse<UserModel>>(
-				"/assets/models",
-				formData,
-				{
-					headers: { "Content-Type": "multipart/form-data" },
-					onUploadProgress: (progressEvent) => {
-						if (onProgress && progressEvent.total) {
-							const progress = Math.round(
-								(progressEvent.loaded * 100) /
-									progressEvent.total
-							);
-							onProgress(progress);
-						}
-					},
-				}
-			);
+			// Check if auto-generation is requested
+			const autoGenerate = metadata?.autoGenerate;
+			const endpoint = autoGenerate
+				? "assets/models/generate"
+				: "/assets/models";
+
+			const response = await apiClient.post<
+				ApiResponse<
+					| UserModel
+					| { model: UserModel; generated_model?: UserModel }
+				>
+			>(endpoint, formData, {
+				headers: { "Content-Type": "multipart/form-data" },
+				onUploadProgress: (progressEvent) => {
+					if (onProgress && progressEvent.total) {
+						const progress = Math.round(
+							(progressEvent.loaded * 100) / progressEvent.total
+						);
+						onProgress(progress);
+					}
+				},
+			});
 			return response.data;
 		} catch (error) {
 			handleApiError(error, "uploadUserModel");
@@ -714,12 +753,18 @@ export const api = {
 
 	// Create virtual try-on request
 	createTryOn: async (
-		request: TryOnRequest
+		modelId: string,
+		clothId: string,
+		options?: {
+			preservePose: boolean;
+			enhanceQuality: boolean;
+			backgroundColor?: string;
+		}
 	): Promise<ApiResponse<TryOnResult>> => {
 		try {
 			const response = await apiClient.post<ApiResponse<TryOnResult>>(
-				"/tryon",
-				request
+				`/tryon/model/${modelId}/cloth/${clothId}`,
+				options ? { options } : {}
 			);
 			return response.data;
 		} catch (error) {
@@ -875,19 +920,45 @@ export const api = {
 		return response.data;
 	},
 
-	// Create avatar
-	createAvatar: async (
-		photos: string[],
-		measures: BodyMeasures
-	): Promise<ApiResponse<UserModel>> => {
-		const response = await apiClient.post<ApiResponse<UserModel>>(
-			"/assets/models/generate",
-			{
-				imageIds: photos,
-				measurements: measures,
-				type: "avatar",
-			}
-		);
+	// Initialize avatar setup
+	setupAvatar: async (
+		imageId: string,
+		options?: {
+			generationType?: "single" | "multiview" | "textured";
+			generateTexture?: boolean;
+			caption?: string;
+		}
+	): Promise<
+		ApiResponse<
+			UserModel | { model: UserModel; generated_model?: UserModel }
+		>
+	> => {
+		const formData = new FormData();
+		formData.append("image_id", imageId);
+
+		if (options?.caption) {
+			formData.append("caption", options.caption);
+		}
+
+		if (options) {
+			formData.append(
+				"options",
+				JSON.stringify({
+					generationType: options.generationType || "single",
+					generateTexture: options.generateTexture || false,
+				})
+			);
+		}
+
+		const response = await apiClient.post<
+			ApiResponse<
+				UserModel | { model: UserModel; generated_model?: UserModel }
+			>
+		>("/assets/models/generate", formData, {
+			headers: {
+				"Content-Type": "multipart/form-data",
+			},
+		});
 		return response.data;
 	},
 
@@ -965,7 +1036,7 @@ export const api = {
 		priceRange?: [number, number];
 		search?: string;
 	}): Promise<ApiResponse<ClothingItem[]>> => {
-		const params: any = {};
+		const params: Record<string, string | number> = {};
 		if (filters?.category) params.category = filters.category;
 		if (filters?.search) params.search = filters.search;
 		if (filters?.priceRange) {

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, useGLTF, Environment, Html } from "@react-three/drei";
-import { Group, Mesh, Vector3, Box3 } from "three";
+import { Group, Mesh, Vector3, Box3, Object3D, Material, Texture } from "three";
 import * as THREE from "three";
 import { Loader2, RefreshCw } from "lucide-react";
 
@@ -65,16 +65,22 @@ function Model({ url }: ModelProps) {
 			scene.scale.setScalar(scale);
 
 			// Fix texture encoding
-			scene.traverse((child: any) => {
-				if (child.isMesh && child.material) {
+			scene.traverse((child: Object3D) => {
+				if (child instanceof Mesh && child.material) {
 					const mats = Array.isArray(child.material)
 						? child.material
 						: [child.material];
 
-					mats.forEach((mat: any) => {
+					mats.forEach((mat: Material) => {
 						// Ensure textures use sRGB for color/emissive maps
+						const material = mat as Material & {
+							map?: Texture;
+							emissiveMap?: Texture;
+						};
 						["map", "emissiveMap"].forEach((k) => {
-							const tex = mat[k];
+							const tex = material[k as keyof typeof material] as
+								| Texture
+								| undefined;
 							if (tex && tex.isTexture) {
 								tex.colorSpace = THREE.SRGBColorSpace;
 								tex.needsUpdate = true;

@@ -23,6 +23,7 @@ const FacePhotos = () => {
 	const [cameraError, setCameraError] = useState<string | null>(null);
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const canvasRef = useRef<HTMLCanvasElement>(null);
+	const streamRef = useRef<MediaStream | null>(null);
 
 	// Use Zustand store
 	const {
@@ -45,6 +46,7 @@ const FacePhotos = () => {
 					},
 				});
 				setStream(mediaStream);
+				streamRef.current = mediaStream;
 				if (videoRef.current) {
 					videoRef.current.srcObject = mediaStream;
 				}
@@ -63,8 +65,8 @@ const FacePhotos = () => {
 		initializeCamera();
 
 		return () => {
-			if (stream) {
-				stream.getTracks().forEach((track) => track.stop());
+			if (streamRef.current) {
+				streamRef.current.getTracks().forEach((track) => track.stop());
 			}
 		};
 	}, []);
@@ -79,6 +81,7 @@ const FacePhotos = () => {
 			console.log("Stopping camera - leaving FacePhotos page");
 			stream.getTracks().forEach((track) => track.stop());
 			setStream(null);
+			streamRef.current = null;
 			if (videoRef.current) {
 				videoRef.current.srcObject = null;
 			}
@@ -96,6 +99,7 @@ const FacePhotos = () => {
 							},
 						});
 					setStream(mediaStream);
+					streamRef.current = mediaStream;
 					if (videoRef.current) {
 						videoRef.current.srcObject = mediaStream;
 					}
@@ -112,8 +116,8 @@ const FacePhotos = () => {
 
 		return () => {
 			// Cleanup when component unmounts
-			if (stream) {
-				stream.getTracks().forEach((track) => track.stop());
+			if (streamRef.current) {
+				streamRef.current.getTracks().forEach((track) => track.stop());
 			}
 		};
 	}, [location.pathname, stream]);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,18 +22,34 @@ import {
 	LogOut,
 } from "lucide-react";
 import { usePhotoStore } from "@/lib/photoStore";
+import { useApiDataStore } from "@/lib/apiDataStore";
 
 const Dashboard = () => {
 	const navigate = useNavigate();
 	const { generatedModels, uploadedModels, currentModel } = usePhotoStore();
+	const { userModels, loadUserModels, tryOnHistory, loadTryOnHistory } =
+		useApiDataStore();
 	const [recentActivity] = useState([
 		{ action: "Generated avatar", time: "2 hours ago", type: "generation" },
 		{ action: "Tried on Summer Casual", time: "1 day ago", type: "tryon" },
 		{ action: "Uploaded custom model", time: "3 days ago", type: "upload" },
 	]);
 
-	const totalModels = generatedModels.length + uploadedModels.length;
-	const hasModels = totalModels > 0;
+	// Load user models and try-on history from API on component mount
+	useEffect(() => {
+		loadUserModels();
+		loadTryOnHistory();
+	}, [loadUserModels, loadTryOnHistory]);
+
+	const totalModels =
+		generatedModels.length + uploadedModels.length + userModels.length;
+	// Check for avatars: local generated models OR API models with type "generated" or "avatar"
+	const avatarCount =
+		generatedModels.length +
+		userModels.filter(
+			(model) => model.type === "generated" || model.type === "avatar"
+		).length;
+	const hasAvatars = avatarCount > 0;
 
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
@@ -67,28 +83,28 @@ const Dashboard = () => {
 						</CardHeader>
 						<CardContent>
 							<div className="space-y-4">
-								{hasModels ? (
+								{hasAvatars ? (
 									<div className="text-sm text-muted-foreground">
-										{totalModels} model
-										{totalModels !== 1 ? "s" : ""} ready •{" "}
+										{avatarCount} avatar
+										{avatarCount !== 1 ? "s" : ""} ready •{" "}
 										{currentModel
-											? "Active model selected"
-											: "Select a model to continue"}
+											? "Active avatar selected"
+											: "Select an avatar to continue"}
 									</div>
 								) : (
 									<div className="text-sm text-muted-foreground">
-										No models yet • Upload or generate one
-										to get started
+										No avatars yet • Generate one from
+										photos to get started
 									</div>
 								)}
 								<Button
 									className="w-full"
 									onClick={() => navigate("/try-on")}
-									disabled={!hasModels}
+									disabled={!hasAvatars}
 								>
-									{hasModels
+									{hasAvatars
 										? "Start Trying On"
-										: "Create Model First"}
+										: "Generate Avatar First"}
 								</Button>
 							</div>
 						</CardContent>
@@ -187,7 +203,11 @@ const Dashboard = () => {
 									</div>
 									<div className="text-center">
 										<div className="text-2xl font-bold text-accent">
-											{generatedModels.length}
+											{generatedModels.length +
+												userModels.filter(
+													(m) =>
+														m.type === "generated"
+												).length}
 										</div>
 										<div className="text-sm text-muted-foreground">
 											Generated
@@ -195,7 +215,10 @@ const Dashboard = () => {
 									</div>
 									<div className="text-center">
 										<div className="text-2xl font-bold text-secondary">
-											{uploadedModels.length}
+											{uploadedModels.length +
+												userModels.filter(
+													(m) => m.type === "custom"
+												).length}
 										</div>
 										<div className="text-sm text-muted-foreground">
 											Uploaded
@@ -203,7 +226,7 @@ const Dashboard = () => {
 									</div>
 									<div className="text-center">
 										<div className="text-2xl font-bold text-muted-foreground">
-											12
+											{tryOnHistory.length}
 										</div>
 										<div className="text-sm text-muted-foreground">
 											Try-Ons
@@ -242,7 +265,7 @@ const Dashboard = () => {
 													)}`
 												)
 											}
-											disabled={!hasModels}
+											disabled={!hasAvatars}
 										>
 											<div className="w-8 h-8 rounded bg-muted flex items-center justify-center">
 												<ShoppingBag className="w-4 h-4" />
@@ -253,9 +276,9 @@ const Dashboard = () => {
 										</Button>
 									))}
 								</div>
-								{!hasModels && (
+								{!hasAvatars && (
 									<p className="text-xs text-muted-foreground mt-3 text-center">
-										Create or upload a model to enable quick
+										Generate an avatar to enable quick
 										try-on
 									</p>
 								)}

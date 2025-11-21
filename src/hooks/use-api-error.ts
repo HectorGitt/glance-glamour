@@ -10,7 +10,7 @@ interface UseApiErrorHandlerOptions {
 }
 
 interface UseApiErrorHandlerReturn {
-	handleError: (error: any, context?: string) => void;
+	handleError: (error: unknown, context?: string) => void;
 	isLoading: boolean;
 	setIsLoading: (loading: boolean) => void;
 	resetError: () => void;
@@ -29,7 +29,7 @@ export const useApiErrorHandler = (
 	const [isLoading, setIsLoading] = useState(false);
 
 	const handleError = useCallback(
-		(error: any, context?: string) => {
+		(error: unknown, context?: string) => {
 			const errorInfo = getApiErrorInfo(error);
 			const contextPrefix = context ? `${context}: ` : "";
 

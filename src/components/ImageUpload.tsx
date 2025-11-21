@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, Loader2 } from "lucide-react";
+import { Upload, Loader2, CheckCircle, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 interface ImageUploadProps {
@@ -15,6 +15,8 @@ export const ImageUpload = ({ onModelGenerated }: ImageUploadProps) => {
 	const [selectedFile, setSelectedFile] = useState<File | null>(null);
 	const [isProcessing, setIsProcessing] = useState(false);
 	const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+	const [uploadedImageId, setUploadedImageId] = useState<string | null>(null);
+	const [isUploading, setIsUploading] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -37,7 +39,7 @@ export const ImageUpload = ({ onModelGenerated }: ImageUploadProps) => {
 			return;
 		}
 
-		setIsProcessing(true);
+		setIsUploading(true);
 		try {
 			toast.info("Uploading image...");
 
@@ -53,34 +55,51 @@ export const ImageUpload = ({ onModelGenerated }: ImageUploadProps) => {
 				}
 			);
 
-			toast.info("Generating 3D model...");
-
-			// Create avatar/model
-			// Using createAvatar as a proxy for "generate model from image"
-			const avatarResponse = await api.createAvatar(
-				[uploadResponse.data.id],
-				{
-					height: 170,
-					chest: 90,
-					waist: 70,
-					hip: 95,
-					shoulder: 40,
-					inseam: 80,
-					unit: "cm",
-				}
-			);
-
-			// Assuming success means we have a "model" (avatar)
-			// We don't have a direct GLB URL from createAvatar immediately in this flow without polling or extra logic,
-			// but for the UI feedback we can simulate success.
-			// If the API returns a model URL in the avatar object, we'd use that.
-			// For now, we'll pass a placeholder or the image URL to indicate success.
-
-			toast.success("3D model generated successfully!");
-			onModelGenerated(uploadResponse.data.url, "completed"); // Passing image URL as fallback if model URL isn't available
+			setUploadedImageId(uploadResponse.data.id);
+			toast.success("Image uploaded successfully!");
 		} catch (error) {
-			console.error("Error generating 3D model:", error);
-			toast.error("Failed to generate 3D model. Please try again.");
+			console.error("Error uploading image:", error);
+			toast.error("Failed to upload image. Please try again.");
+		} finally {
+			setIsUploading(false);
+		}
+	};
+
+	const handleGenerateModel = async () => {
+		if (!uploadedImageId) {
+			toast.error("Please upload an image first");
+			return;
+		}
+
+		setIsProcessing(true);
+		try {
+			toast.info("Initializing avatar setup...");
+
+			// Initialize avatar setup from image
+			const setupResponse = await api.setupAvatar(uploadedImageId!);
+
+			// Handle both response types: UserModel or { model: UserModel; generated_model?: UserModel }
+			const resultData =
+				"model" in setupResponse.data
+					? setupResponse.data
+					: { model: setupResponse.data, generated_model: undefined };
+
+			// Get the GLB URL from the response
+			let glbUrl = "";
+			if (resultData.generated_model) {
+				// Prefer enhanced/generated model
+				glbUrl = resultData.generated_model.url;
+			} else if (resultData.model) {
+				// Use base model
+				glbUrl = resultData.model.url;
+			}
+
+			// Assuming success means avatar setup is initialized
+			toast.success("Avatar setup initialized successfully!");
+			onModelGenerated(glbUrl, "setup"); // Passing GLB URL, status as "setup"
+		} catch (error) {
+			console.error("Error initializing avatar setup:", error);
+			toast.error("Failed to initialize avatar setup. Please try again.");
 		} finally {
 			setIsProcessing(false);
 		}
@@ -159,25 +178,59 @@ export const ImageUpload = ({ onModelGenerated }: ImageUploadProps) => {
 					/>
 				</div>
 
-				<Button
-					onClick={handleUpload}
-					disabled={!selectedFile || isProcessing}
-					className="w-full"
-					loading={isProcessing}
-					loadingText="Generating 3D Model..."
-				>
-					{isProcessing ? (
-						<>
-							<Loader2 className="w-4 h-4 mr-2 animate-spin" />
-							Generating 3D Model...
-						</>
-					) : (
-						<>
-							<Upload className="w-4 h-4 mr-2" />
-							Generate 3D Model
-						</>
-					)}
-				</Button>
+				{uploadedImageId ? (
+					<div className="space-y-4">
+						<div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+							<CheckCircle className="w-8 h-8 mx-auto text-green-600 dark:text-green-400 mb-2" />
+							<p className="text-sm font-medium text-green-800 dark:text-green-200">
+								Image uploaded successfully!
+							</p>
+							<p className="text-xs text-green-600 dark:text-green-400">
+								Ready to generate 3D model
+							</p>
+						</div>
+
+						<Button
+							onClick={handleGenerateModel}
+							disabled={isProcessing}
+							className="w-full"
+							loading={isProcessing}
+							loadingText="Initializing Avatar Setup..."
+						>
+							{isProcessing ? (
+								<>
+									<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+									Initializing Avatar Setup...
+								</>
+							) : (
+								<>
+									<Sparkles className="w-4 h-4 mr-2" />
+									Generate 3D Model
+								</>
+							)}
+						</Button>
+					</div>
+				) : (
+					<Button
+						onClick={handleUpload}
+						disabled={!selectedFile || isUploading}
+						className="w-full"
+						loading={isUploading}
+						loadingText="Uploading Image..."
+					>
+						{isUploading ? (
+							<>
+								<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+								Uploading Image...
+							</>
+						) : (
+							<>
+								<Upload className="w-4 h-4 mr-2" />
+								Upload Image
+							</>
+						)}
+					</Button>
+				)}
 			</div>
 		</Card>
 	);

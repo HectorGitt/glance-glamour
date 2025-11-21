@@ -22,16 +22,30 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { usePhotoStore } from "@/lib/photoStore";
+import type { GeneratedModel, UploadedModel } from "@/lib/photoStore";
 import { useApiDataStore } from "@/lib/apiDataStore";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { ModelViewer } from "@/components/ModelViewer";
 
+type LibraryModel = {
+	id: string;
+	url?: string;
+	downloadUrl?: string;
+	name?: string;
+	fileName?: string;
+	type: "generated" | "uploaded";
+	source?: "local" | "api";
+	generationType?: string;
+	hasTexture?: boolean;
+	timestamp?: number;
+};
+
 const ModelLibrary = () => {
 	const navigate = useNavigate();
 	const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 	const [previewMode, setPreviewMode] = useState<"static" | "animated">(
-		"static"
+		"animated"
 	);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [filterType, setFilterType] = useState<
@@ -64,24 +78,61 @@ const ModelLibrary = () => {
 
 	const allModels = [
 		...(generatedModels || []).map((model) => ({
-			...model,
-			type: "generated" as const,
+			id: model.id,
+			url: model.url,
+			downloadUrl: model.downloadUrl,
+			name: model.name,
 			fileName: undefined,
+			type: "generated" as const,
+			source: "local" as const,
+			generationType: model.generationType,
+			hasTexture: model.hasTexture,
+			timestamp: model.timestamp,
 		})),
 		...(uploadedModels || []).map((model) => ({
-			...model,
+			id: model.id,
+			url: model.url,
+			downloadUrl: undefined,
+			name: model.name,
+			fileName: model.fileName,
 			type: "uploaded" as const,
 			source: "local" as const,
+			generationType: undefined,
+			hasTexture: undefined,
+			timestamp: model.timestamp,
 		})),
 		...(userModels || []).map((model) => ({
-			...model,
-			type: "uploaded" as const,
-			source: "api" as const,
+			id: model.id,
 			url: model.url,
+			downloadUrl: model.url,
 			name: model.filename,
 			fileName: model.filename,
+			type:
+				model.type === "generated" || model.type === "avatar"
+					? ("generated" as const)
+					: ("uploaded" as const),
+			source: "api" as const,
+			generationType: model.metadata?.generationType,
+			hasTexture: model.metadata?.hasTexture,
+			timestamp: new Date(model.createdAt).getTime(),
 		})),
-	];
+	].sort((a, b) => {
+		// Sort by timestamp or createdAt, newest first
+		const getTime = (model: LibraryModel) => {
+			if (model.timestamp) {
+				return model.timestamp;
+			}
+			const apiModel = model as LibraryModel & { createdAt?: string };
+			if (apiModel.createdAt) {
+				return new Date(apiModel.createdAt).getTime();
+			}
+			return 0;
+		};
+
+		const aTime = getTime(a);
+		const bTime = getTime(b);
+		return bTime - aTime; // Newest first
+	});
 
 	const filteredModels = allModels.filter((model) => {
 		const matchesSearch =
@@ -132,10 +183,15 @@ const ModelLibrary = () => {
 			);
 
 			if (uploadResponse.success) {
+				// Handle both response types: UserModel or { model: UserModel; generated_model?: UserModel }
 				const uploadedModel = uploadResponse.data;
+				const modelData =
+					"model" in uploadedModel
+						? uploadedModel.model
+						: uploadedModel;
 
 				// Download the model from the URL with progress tracking
-				const response = await fetch(uploadedModel.url);
+				const response = await fetch(modelData.url);
 				if (!response.ok) {
 					throw new Error("Failed to download uploaded model");
 				}
@@ -168,8 +224,8 @@ const ModelLibrary = () => {
 				const { addUploadedModel } = usePhotoStore.getState();
 				addUploadedModel({
 					blob,
-					fileName: uploadedModel.filename,
-					name: uploadedModel.filename,
+					fileName: modelData.filename,
+					name: modelData.filename,
 				});
 
 				// Reload API models to include the new one
@@ -192,7 +248,7 @@ const ModelLibrary = () => {
 		event.target.value = "";
 	};
 
-	const handleModelDownload = async (model: any) => {
+	const handleModelDownload = async (model: LibraryModel) => {
 		if (downloadingModels.has(model.id)) return;
 
 		setDownloadingModels((prev) => new Set(prev).add(model.id));
@@ -202,7 +258,7 @@ const ModelLibrary = () => {
 			let downloadUrl = model.url;
 
 			// If it's an API model, use the URL directly
-			if (model.source === "api" || model.type === "api") {
+			if (model.source === "api") {
 				downloadUrl = model.url;
 			} else if (model.downloadUrl) {
 				// For generated models with downloadUrl
@@ -272,7 +328,7 @@ const ModelLibrary = () => {
 	};
 
 	const handleDeleteModel = async (
-		model: any,
+		model: LibraryModel,
 		type: "generated" | "uploaded" | "api"
 	) => {
 		if (type === "generated") {
@@ -303,8 +359,52 @@ const ModelLibrary = () => {
 		toast.success("Model deleted successfully");
 	};
 
-	const handleUseModel = (model: any) => {
-		setCurrentModel(model);
+	const handleUseModel = (model: LibraryModel) => {
+		// Find the actual model in the store based on the LibraryModel
+		let actualModel: GeneratedModel | UploadedModel | null = null;
+
+		if (model.type === "generated") {
+			if (model.source === "api") {
+				// For API-generated models, create a proper GeneratedModel
+				actualModel = {
+					id: model.id,
+					url: model.url || "",
+					downloadUrl: model.url || "",
+					generationType:
+						(model.generationType as
+							| "single"
+							| "multiview"
+							| "textured") || "single",
+					hasTexture: model.hasTexture || false,
+					name: model.name || model.fileName,
+					status: "completed",
+					timestamp: model.timestamp || Date.now(),
+				};
+			} else {
+				// Local generated model
+				actualModel =
+					generatedModels.find((m) => m.id === model.id) || null;
+			}
+		} else if (model.type === "uploaded") {
+			if (model.source === "api") {
+				// For API-uploaded models, create a proper UploadedModel
+				actualModel = {
+					id: model.id,
+					blob: new Blob(), // Empty blob for API models
+					url: model.url || "",
+					fileName:
+						model.fileName || model.name || `model-${model.id}`,
+					timestamp: model.timestamp || Date.now(),
+					name: model.name || model.fileName,
+				};
+			} else {
+				// Local uploaded model
+				actualModel =
+					uploadedModels.find((m) => m.id === model.id) || null;
+			}
+		}
+
+		setCurrentModel(actualModel);
 		toast.success(
 			`Now using ${model.name || model.fileName || "this model"}`
 		);
@@ -387,7 +487,11 @@ const ModelLibrary = () => {
 								</div>
 								<div>
 									<p className="text-2xl font-bold">
-										{generatedModels.length}
+										{
+											allModels.filter(
+												(m) => m.type === "generated"
+											).length
+										}
 									</p>
 									<p className="text-sm text-muted-foreground">
 										Generated Models
@@ -644,26 +748,36 @@ const ModelLibrary = () => {
 												</p>
 
 												<div className="flex items-center space-x-2 pt-2">
-													<Button
-														size="sm"
-														variant={
-															currentModel?.id ===
+													{model.type ===
+													"generated" ? (
+														<Button
+															size="sm"
+															variant={
+																currentModel?.id ===
+																model.id
+																	? "default"
+																	: "outline"
+															}
+															onClick={() =>
+																handleUseModel(
+																	model
+																)
+															}
+															className="flex-1"
+														>
+															{currentModel?.id ===
 															model.id
-																? "default"
-																: "outline"
-														}
-														onClick={() =>
-															handleUseModel(
-																model
-															)
-														}
-														className="flex-1"
-													>
-														{currentModel?.id ===
-														model.id
-															? "Active"
-															: "Use"}
-													</Button>
+																? "Active"
+																: "Use"}
+														</Button>
+													) : (
+														<div className="flex-1 text-center">
+															<span className="text-xs text-muted-foreground">
+																Not available
+																for try-on
+															</span>
+														</div>
+													)}
 													<div className="relative">
 														<Button
 															size="sm"

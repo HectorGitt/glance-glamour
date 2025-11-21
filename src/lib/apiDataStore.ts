@@ -1,5 +1,19 @@
 import { create } from "zustand";
-import { api, UserModel, ClothingItem } from "./api";
+import { api, UserModel, ClothingItem, TryOnResult } from "./api";
+
+interface ClothingCatalogParams {
+	category?: ClothingItem["category"];
+	subcategory?: string;
+	brand?: string;
+	priceMin?: number;
+	priceMax?: number;
+	colors?: string[];
+	sizes?: string[];
+	tags?: string[];
+	search?: string;
+	limit?: number;
+	offset?: number;
+}
 
 export interface ApiDataState {
 	// Models
@@ -12,11 +26,26 @@ export interface ApiDataState {
 	clothingLoading: boolean;
 	clothingError: string | null;
 
+	// Try-ons
+	tryOnHistory: TryOnResult[];
+	tryOnLoading: boolean;
+	tryOnError: string | null;
+
 	// Actions
 	loadUserModels: () => Promise<void>;
-	loadClothingCatalog: (params?: any) => Promise<void>;
+	loadClothingCatalog: (params?: ClothingCatalogParams) => Promise<void>;
+	loadTryOnHistory: (params?: {
+		limit?: number;
+		offset?: number;
+		status?: TryOnResult["status"];
+	}) => Promise<void>;
 	refreshModels: () => Promise<void>;
-	refreshClothing: (params?: any) => Promise<void>;
+	refreshClothing: (params?: ClothingCatalogParams) => Promise<void>;
+	refreshTryOns: (params?: {
+		limit?: number;
+		offset?: number;
+		status?: TryOnResult["status"];
+	}) => Promise<void>;
 	clearErrors: () => void;
 }
 
@@ -30,6 +59,10 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
 	clothingLoading: false,
 	clothingError: null,
 
+	tryOnHistory: [],
+	tryOnLoading: false,
+	tryOnError: null,
+
 	// Load user models from API
 	loadUserModels: async () => {
 		set({ modelsLoading: true, modelsError: null });
@@ -40,11 +73,15 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
 				modelsLoading: false,
 				modelsError: null,
 			});
-		} catch (error: any) {
+		} catch (error: unknown) {
+			const errorMessage =
+				error instanceof Error
+					? error.message
+					: "Failed to load models";
 			set({
 				userModels: [],
 				modelsLoading: false,
-				modelsError: error.message || "Failed to load models",
+				modelsError: errorMessage,
 			});
 		}
 	},
@@ -59,12 +96,38 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
 				clothingLoading: false,
 				clothingError: null,
 			});
-		} catch (error: any) {
+		} catch (error: unknown) {
+			const errorMessage =
+				error instanceof Error
+					? error.message
+					: "Failed to load clothing catalog";
 			set({
 				clothingCatalog: [],
 				clothingLoading: false,
-				clothingError:
-					error.message || "Failed to load clothing catalog",
+				clothingError: errorMessage,
+			});
+		}
+	},
+
+	// Load try-on history from API
+	loadTryOnHistory: async (params = { limit: 50 }) => {
+		set({ tryOnLoading: true, tryOnError: null });
+		try {
+			const response = await api.getTryOnHistory(params);
+			set({
+				tryOnHistory: response.data || [],
+				tryOnLoading: false,
+				tryOnError: null,
+			});
+		} catch (error: unknown) {
+			const errorMessage =
+				error instanceof Error
+					? error.message
+					: "Failed to load try-on history";
+			set({
+				tryOnHistory: [],
+				tryOnLoading: false,
+				tryOnError: errorMessage,
 			});
 		}
 	},
@@ -79,6 +142,12 @@ export const useApiDataStore = create<ApiDataState>((set, get) => ({
 		await get().loadClothingCatalog(params);
 	},
 
+	// Refresh try-ons (alias for loadTryOnHistory)
+	refreshTryOns: async (params = { limit: 50 }) => {
+		await get().loadTryOnHistory(params);
+	},
+
 	// Clear errors
-	clearErrors: () => set({ modelsError: null, clothingError: null }),
+	clearErrors: () =>
+		set({ modelsError: null, clothingError: null, tryOnError: null }),
 }));

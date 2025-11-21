@@ -22,6 +22,15 @@ const TIPS = [
 	"All your data is encrypted and secure.",
 ];
 
+interface MeshStats {
+	vertices?: number;
+	faces?: number;
+	textures?: number;
+	file_size?: number;
+	processing_time?: number;
+	[key: string]: number | string | undefined;
+}
+
 const Processing = () => {
 	const navigate = useNavigate();
 	const {
@@ -37,7 +46,7 @@ const Processing = () => {
 	const [progress, setProgress] = useState(0);
 	const [currentTip, setCurrentTip] = useState(0);
 	const [isProcessing, setIsProcessing] = useState(false);
-	const [meshStats, setMeshStats] = useState<any>(null);
+	const [meshStats, setMeshStats] = useState<MeshStats | null>(null);
 
 	const startGeneration = async () => {
 		// Check if we have the required images for single image generation
@@ -80,56 +89,103 @@ const Processing = () => {
 			setProgress(60);
 			toast.info("Generating your 3D avatar...");
 
-			// Call createAvatar API
-			// Note: createAvatar expects photos array and measures.
-			// We'll pass the body photo ID. Measures might be needed, passing defaults or empty if allowed.
-			// If measures are strictly required, we might need to fetch them or prompt user.
-			// For now, assuming we can pass dummy measures or the backend handles it.
-			const avatarResponse = await api.createAvatar([imageId], {
-				height: 170, // Default height
-				chest: 90,
-				waist: 70,
-				hip: 95,
-				shoulder: 40,
-				inseam: 80,
-				unit: "cm",
+			// Use enhanced model generation with auto-generation enabled
+			// Create a virtual model file for generation (empty blob triggers generation from image)
+			const virtualModelBlob = new Blob([], {
+				type: "model/gltf-binary",
 			});
+			const virtualModelFile = new File(
+				[virtualModelBlob],
+				"generated-avatar.glb",
+				{
+					type: "model/gltf-binary",
+				}
+			);
+
+			const modelResponse = await api.uploadUserModel(
+				virtualModelFile,
+				"avatar",
+				[imageId], // Associate with the uploaded image
+				{
+					generationType: advancedSettings.generateTexture
+						? "textured"
+						: "single",
+					hasTexture: advancedSettings.generateTexture,
+					size: 0, // Will be set by the server
+					format: "glb",
+					autoGenerate: true, // Enable auto-generation
+					enhanceQuality: true, // Use enhanced quality
+				}
+			);
+
+			const result = modelResponse.data;
+
+			// Handle both uploaded and generated models
+			let modelsAdded = 0;
+			let finalModel = null;
+
+			// Handle both response types: UserModel or { model: UserModel; generated_model?: UserModel }
+			const resultData =
+				"model" in result
+					? result
+					: { model: result, generated_model: undefined };
+
+			// Check for uploaded model
+			if (resultData.model) {
+				const uploadedModel = resultData.model;
+				addGeneratedModel({
+					id: uploadedModel.id,
+					url: uploadedModel.url,
+					downloadUrl: uploadedModel.url,
+					generationType: advancedSettings.generateTexture
+						? "textured"
+						: "single",
+					hasTexture: advancedSettings.generateTexture,
+					name: `Avatar ${uploadedModel.id.slice(-4)}`,
+					status: "completed",
+				});
+				modelsAdded++;
+				finalModel = uploadedModel;
+				console.log("Generated base model:", uploadedModel);
+			}
+
+			// Check for enhanced/generated model
+			if (resultData.generated_model) {
+				const enhancedModel = resultData.generated_model;
+				addGeneratedModel({
+					id: enhancedModel.id,
+					url: enhancedModel.url,
+					downloadUrl: enhancedModel.url,
+					generationType: "textured",
+					hasTexture: true,
+					name: `Enhanced Avatar ${enhancedModel.id.slice(-4)}`,
+					status: "completed",
+				});
+				modelsAdded++;
+				finalModel = enhancedModel; // Prefer enhanced model
+				console.log("Generated enhanced model:", enhancedModel);
+			}
 
 			// Step 4: Finalizing
 			setCurrentStep(3);
 			setProgress(90);
-			toast.success("Avatar generated successfully!");
 
-			// The API returns an Avatar object. We need to convert/use it as a generated model.
-			// Assuming the backend processes it and we can get a model URL or ID.
-			// If createAvatar returns a status, we might need to poll.
-			// For this implementation, we'll assume success and mock a model entry if the API doesn't return a direct model URL yet,
-			// OR we use the avatar ID to fetch the model.
+			const successMessage =
+				modelsAdded === 2
+					? "Avatar generated with enhanced quality!"
+					: "Avatar generated successfully!";
 
-			// Since createAvatar returns an Avatar object which might not have the GLB URL directly (it has photos and measures),
-			// we might need to check if there's a model associated or if we need to call another endpoint.
-			// However, to keep it simple and consistent with the previous flow, let's assume the avatar creation triggers model generation
-			// and we can proceed.
-
-			// Ideally, we would get a model URL. If not, we might need to use a placeholder or fetch it.
-			// Let's try to use the avatar ID as the model ID for now.
-
-			const avatar = avatarResponse.data;
-
-			addGeneratedModel({
-				blob: new Blob(), // We don't have the blob directly from createAvatar, might need to fetch it if we want to store it locally
-				downloadUrl: "", // We'd need a URL to the model
-				generationType: "single",
-				hasTexture: advancedSettings.generateTexture,
-				name: `Avatar ${avatar.id}`,
-				status: "completed",
-				id: avatar.id, // Use avatar ID
+			toast.success(successMessage, {
+				description:
+					modelsAdded === 2
+						? "Both standard and enhanced versions created."
+						: "Your 3D avatar is ready to use.",
 			});
 
 			setProgress(100);
 			setComplete(true);
 
-			setTimeout(() => navigate("/onboarding/avatar-preview"), 1000);
+			setTimeout(() => navigate("/try-on"), 1000);
 		} catch (error) {
 			console.error("Avatar generation failed:", error);
 			toast.error("Failed to generate avatar. Please try again.");
@@ -178,7 +234,7 @@ const Processing = () => {
 								<span>
 									Using single image generation •{" "}
 									{advancedSettings.generateTexture
-										? "Mesh + Texture"
+										? "Mesh + Texture + Enhancement"
 										: "Mesh Only"}
 								</span>
 							</div>
@@ -251,7 +307,7 @@ const Processing = () => {
 												</h4>
 												<p className="text-sm text-muted-foreground">
 													Generate 3D geometry with
-													textures
+													textures and AI enhancement
 												</p>
 											</div>
 										</div>

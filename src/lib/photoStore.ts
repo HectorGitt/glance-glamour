@@ -50,14 +50,24 @@ export interface FullBodyPhoto {
 
 export interface GeneratedModel {
 	id: string;
-	blob: Blob;
+	blob?: Blob; // Optional for API-returned models
 	url: string;
 	downloadUrl: string; // Original download URL for persistence
 	status: string;
 	timestamp: number;
-	generationType: "single" | "multiview";
+	generationType: "single" | "multiview" | "textured";
 	hasTexture: boolean;
 	name?: string; // Optional custom name
+}
+
+export interface ModelMetadata {
+	size: number;
+	format: string;
+	generationType?: "single" | "multiview" | "textured";
+	hasTexture?: boolean;
+	processingTime?: number;
+	autoGenerate?: boolean;
+	enhanceQuality?: boolean;
 }
 
 export interface UploadedModel {
@@ -69,7 +79,7 @@ export interface UploadedModel {
 	name?: string; // Optional custom name
 	thumbnailUrl?: string;
 	type?: string;
-	metadata?: any;
+	metadata?: ModelMetadata;
 }
 
 export interface OnboardingData {
