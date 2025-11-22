@@ -100,6 +100,7 @@ This project includes Google Cloud deployment configuration for automated CI/CD.
 2. Authenticate: `gcloud auth login`
 3. Set your project: `gcloud config set project YOUR_PROJECT_ID`
 4. Copy `.env.deploy.example` to `.env.deploy` and update the values
+5. Set the required environment variables (see Environment Variables section below)
 
 ### Required IAM Permissions
 
@@ -132,8 +133,10 @@ gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
 **Linux/macOS:**
 
 ```sh
-# Set your project ID
+# Set your environment variables
 export PROJECT_ID="your-project-id"
+export VITE_API_BASE_URL="https://your-backend-api-url"
+export VITE_GRADIO_API_URL="https://your-gradio-api-url"
 
 # Make the script executable and run it
 chmod +x deploy.sh
@@ -143,8 +146,12 @@ chmod +x deploy.sh
 **Windows PowerShell:**
 
 ```powershell
-# Set your project ID and run the script
+# Set your environment variables
 $env:PROJECT_ID = "your-project-id"
+$env:VITE_API_BASE_URL = "https://your-backend-api-url"
+$env:VITE_GRADIO_API_URL = "https://your-gradio-api-url"
+
+# Run the script
 .\deploy.ps1
 ```
 
@@ -195,6 +202,8 @@ Set these environment variables before deployment:
 
 -   `PROJECT_ID`: Your Google Cloud Project ID
 -   `REGION`: Deployment region (default: us-central1)
+-   `VITE_API_BASE_URL`: Your backend API URL (e.g., https://your-backend-service-url)
+-   `VITE_GRADIO_API_URL`: Your Gradio API URL for 3D avatar generation (e.g., https://your-gradio-app.gradio.live/)
 
 ### Monitoring
 
