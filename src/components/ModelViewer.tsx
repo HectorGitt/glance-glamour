@@ -15,162 +15,146 @@ function Model({ url }: ModelProps) {
 	const [retryCount, setRetryCount] = useState(0);
 	const [isLoading, setIsLoading] = useState(true);
 
-	try {
-		const { scene } = useGLTF(
-			`${url}?retry=${retryCount}`,
-			undefined,
-			undefined,
-			(err) => {
-				console.error("Error loading GLTF:", err);
-				const errorMessage =
-					err instanceof Error ? err.message : String(err);
-				// Check if it's a 404 or file not found error
-				if (
-					errorMessage.includes("Unexpected token '<'") ||
-					errorMessage.includes("DOCTYPE") ||
-					errorMessage.includes("404") ||
-					errorMessage.includes("Not Found")
-				) {
-					setError(
-						"Model file not found. Please check if the file exists or try uploading again."
-					);
-				} else if (
-					errorMessage.includes("NetworkError") ||
-					errorMessage.includes("Failed to fetch")
-				) {
-					setError(
-						"Network error. Please check your connection and try again."
-					);
-				} else {
-					setError("Failed to load model. Please try again.");
-				}
-				setIsLoading(false);
+	const { scene } = useGLTF(
+		`${url}?retry=${retryCount}`,
+		undefined,
+		undefined,
+		(err) => {
+			console.error("Error loading GLTF:", err);
+			const errorMessage =
+				err instanceof Error ? err.message : String(err);
+			// Check if it's a 404 or file not found error
+			if (
+				errorMessage.includes("Unexpected token '<'") ||
+				errorMessage.includes("DOCTYPE") ||
+				errorMessage.includes("404") ||
+				errorMessage.includes("Not Found")
+			) {
+				setError(
+					"Model file not found. Please check if the file exists or try uploading again."
+				);
+			} else if (
+				errorMessage.includes("NetworkError") ||
+				errorMessage.includes("Failed to fetch")
+			) {
+				setError(
+					"Network error. Please check your connection and try again."
+				);
+			} else {
+				setError("Failed to load model. Please try again.");
 			}
-		);
+			setIsLoading(false);
+		}
+	);
 
-		const handleRetry = () => {
-			setError(null);
-			setIsLoading(true);
-			setRetryCount((prev) => prev + 1);
-		};
+	const handleRetry = () => {
+		setError(null);
+		setIsLoading(true);
+		setRetryCount((prev) => prev + 1);
+	};
 
-		// Handle successful loading
-		useEffect(() => {
-			if (scene && !error) {
-				setIsLoading(false);
-			}
-		}, [scene, error]);
+	// Handle successful loading
+	useEffect(() => {
+		if (scene && !error) {
+			setIsLoading(false);
+		}
+	}, [scene, error]);
 
-		// Auto-rotate the model slowly
-		useFrame((state, delta) => {
-			if (groupRef.current && !error && !isLoading) {
-				groupRef.current.rotation.y += delta * 0.2;
-			}
-		});
+	// Auto-rotate the model slowly
+	useFrame((state, delta) => {
+		if (groupRef.current && !error && !isLoading) {
+			groupRef.current.rotation.y += delta * 0.2;
+		}
+	});
 
-		// Center and scale the model, and fix textures
-		useEffect(() => {
-			if (scene && groupRef.current && !error) {
-				try {
-					// Calculate bounding box to center the model
-					const box = new Box3().setFromObject(scene);
-					const center = box.getCenter(new Vector3());
-					scene.position.sub(center);
+	// Center and scale the model, and fix textures
+	useEffect(() => {
+		if (scene && groupRef.current && !error) {
+			try {
+				// Calculate bounding box to center the model
+				const box = new Box3().setFromObject(scene);
+				const center = box.getCenter(new Vector3());
+				scene.position.sub(center);
 
-					// Scale to fit in view
-					const size = box.getSize(new Vector3());
-					const maxDim = Math.max(size.x, size.y, size.z);
-					const scale = 2 / maxDim;
-					scene.scale.setScalar(scale);
+				// Scale to fit in view
+				const size = box.getSize(new Vector3());
+				const maxDim = Math.max(size.x, size.y, size.z);
+				const scale = 2 / maxDim;
+				scene.scale.setScalar(scale);
 
-					// Fix texture encoding
-					scene.traverse((child: Object3D) => {
-						if (child instanceof Mesh && child.material) {
-							const mats = Array.isArray(child.material)
-								? child.material
-								: [child.material];
+				// Fix texture encoding
+				scene.traverse((child: Object3D) => {
+					if (child instanceof Mesh && child.material) {
+						const mats = Array.isArray(child.material)
+							? child.material
+							: [child.material];
 
-							mats.forEach((mat: Material) => {
-								// Ensure textures use sRGB for color/emissive maps
-								const material = mat as Material & {
-									map?: Texture;
-									emissiveMap?: Texture;
-								};
-								["map", "emissiveMap"].forEach((k) => {
-									const tex = material[
-										k as keyof typeof material
-									] as Texture | undefined;
-									if (tex && tex.isTexture) {
-										tex.colorSpace = THREE.SRGBColorSpace;
-										tex.needsUpdate = true;
-									}
-								});
-
-								// Mark material as needing an update
-								if (mat.needsUpdate !== undefined)
-									mat.needsUpdate = true;
+						mats.forEach((mat: Material) => {
+							// Ensure textures use sRGB for color/emissive maps
+							const material = mat as Material & {
+								map?: Texture;
+								emissiveMap?: Texture;
+							};
+							["map", "emissiveMap"].forEach((k) => {
+								const tex = material[
+									k as keyof typeof material
+								] as Texture | undefined;
+								if (tex && tex.isTexture) {
+									tex.colorSpace = THREE.SRGBColorSpace;
+									tex.needsUpdate = true;
+								}
 							});
-						}
-					});
-				} catch (processingError) {
-					console.error("Error processing model:", processingError);
-					setError("Error processing model geometry or textures.");
-					setIsLoading(false);
-				}
+
+							// Mark material as needing an update
+							if (mat.needsUpdate !== undefined)
+								mat.needsUpdate = true;
+						});
+					}
+				});
+			} catch (processingError) {
+				console.error("Error processing model:", processingError);
+				setError("Error processing model geometry or textures.");
+				setIsLoading(false);
 			}
-		}, [scene, error]);
-
-		if (error) {
-			return (
-				<Html center>
-					<div className="text-center space-y-3 p-4 bg-red-50 rounded-lg border border-red-200 max-w-sm">
-						<div className="w-8 h-8 mx-auto rounded-full bg-red-100 flex items-center justify-center">
-							<RefreshCw className="w-4 h-4 text-red-600" />
-						</div>
-						<div>
-							<p className="text-xs text-red-600 mb-2">{error}</p>
-							<button
-								onClick={handleRetry}
-								className="text-xs px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-							>
-								Retry
-							</button>
-						</div>
-					</div>
-				</Html>
-			);
 		}
+	}, [scene, error]);
 
-		if (isLoading) {
-			return (
-				<Html center>
-					<div className="flex items-center justify-center">
-						<Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-					</div>
-				</Html>
-			);
-		}
-
-		return (
-			<group ref={groupRef}>
-				<primitive object={scene} />
-			</group>
-		);
-	} catch (componentError) {
-		console.error("Model component error:", componentError);
+	if (error) {
 		return (
 			<Html center>
-				<div className="text-center space-y-2 p-4 bg-red-50 rounded-lg border border-red-200 max-w-sm">
+				<div className="text-center space-y-3 p-4 bg-red-50 rounded-lg border border-red-200 max-w-sm">
 					<div className="w-8 h-8 mx-auto rounded-full bg-red-100 flex items-center justify-center">
 						<RefreshCw className="w-4 h-4 text-red-600" />
 					</div>
-					<p className="text-xs text-red-600">
-						Failed to render model
-					</p>
+					<div>
+						<p className="text-xs text-red-600 mb-2">{error}</p>
+						<button
+							onClick={handleRetry}
+							className="text-xs px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+						>
+							Retry
+						</button>
+					</div>
 				</div>
 			</Html>
 		);
 	}
+
+	if (isLoading) {
+		return (
+			<Html center>
+				<div className="flex items-center justify-center">
+					<Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+				</div>
+			</Html>
+		);
+	}
+
+	return (
+		<group ref={groupRef}>
+			<primitive object={scene} />
+		</group>
+	);
 }
 
 interface ModelViewerProps {
