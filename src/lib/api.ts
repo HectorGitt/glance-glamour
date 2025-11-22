@@ -6,7 +6,9 @@ import axios, {
 } from "axios";
 
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+const API_BASE_URL =
+	import.meta.env.VITE_API_BASE_URL ||
+	"https://avera-api-xitpm3gava-uc.a.run.app";
 const API_TIMEOUT = 300000; // 5 minutes (for model generation)
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
