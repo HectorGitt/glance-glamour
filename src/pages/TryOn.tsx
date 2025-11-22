@@ -25,6 +25,10 @@ import apiClient from "@/lib/api";
 import { usePhotoStore } from "@/lib/photoStore";
 import { useApiDataStore } from "@/lib/apiDataStore";
 import { useApiErrorHandler } from "@/hooks/use-api-error";
+import {
+	useOnboardingStatus,
+	getNextOnboardingStep,
+} from "@/hooks/use-onboarding-status";
 import { ModelViewer } from "@/components/ModelViewer";
 import type { GeneratedModel, UploadedModel } from "@/lib/photoStore";
 
@@ -44,6 +48,13 @@ type LibraryModel = {
 const TryOn = () => {
 	const navigate = useNavigate();
 	const { handleError } = useApiErrorHandler();
+	const {
+		hasConsent,
+		hasMeasurements,
+		hasFacePhotos,
+		hasBodyPhoto,
+		isLoading: onboardingLoading,
+	} = useOnboardingStatus();
 	const [selectedOutfit, setSelectedOutfit] = useState<ClothingItem | null>(
 		null
 	);
@@ -53,6 +64,22 @@ const TryOn = () => {
 	const [lastTryOnResult, setLastTryOnResult] = useState<TryOnResult | null>(
 		null
 	);
+
+	const navigateToOnboarding = () => {
+		const nextStep = getNextOnboardingStep({
+			hasConsent,
+			hasMeasurements,
+			hasFacePhotos,
+			hasBodyPhoto,
+			isLoading: onboardingLoading,
+			error: null,
+		});
+		if (nextStep) {
+			navigate(nextStep);
+		} else {
+			navigate("/dashboard");
+		}
+	};
 
 	const {
 		generatedModels,
@@ -1010,9 +1037,7 @@ const TryOn = () => {
 										variant="outline"
 										size="sm"
 										className="w-full justify-start"
-										onClick={() =>
-											navigate("/onboarding/consent")
-										}
+										onClick={() => navigateToOnboarding()}
 									>
 										<Sparkles className="w-3 h-3 mr-2" />
 										Generate New Model

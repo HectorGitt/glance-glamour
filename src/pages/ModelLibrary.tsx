@@ -30,6 +30,10 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { ModelViewer } from "@/components/ModelViewer";
 import { ModelPreviewModal } from "@/components/ModelPreviewModal";
+import {
+	useOnboardingStatus,
+	getNextOnboardingStep,
+} from "@/hooks/use-onboarding-status";
 
 type LibraryModel = {
 	id: string;
@@ -75,6 +79,17 @@ const ModelLibrary = () => {
 	} = usePhotoStore();
 
 	const { userModels, modelsLoading, loadUserModels } = useApiDataStore();
+
+	const onboardingStatus = useOnboardingStatus();
+
+	const navigateToOnboarding = () => {
+		const nextStep = getNextOnboardingStep(onboardingStatus);
+		if (nextStep) {
+			navigate(nextStep);
+		} else {
+			navigate("/dashboard");
+		}
+	};
 
 	// Load models from API on mount
 	React.useEffect(() => {
@@ -484,7 +499,7 @@ const ModelLibrary = () => {
 						{/* Generate Button */}
 						<Button
 							variant="outline"
-							onClick={() => navigate("/onboarding/consent")}
+							onClick={navigateToOnboarding}
 							disabled={isUploading}
 						>
 							<Sparkles className="w-4 h-4 mr-2" />
@@ -686,9 +701,7 @@ const ModelLibrary = () => {
 								/>
 								<Button
 									variant="outline"
-									onClick={() =>
-										navigate("/onboarding/consent")
-									}
+									onClick={navigateToOnboarding}
 									disabled={isUploading}
 								>
 									<Sparkles className="w-4 h-4 mr-2" />

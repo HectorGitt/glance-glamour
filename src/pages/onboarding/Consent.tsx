@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -21,13 +21,70 @@ import {
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import {
+	useOnboardingStatus,
+	getNextOnboardingStep,
+} from "@/hooks/use-onboarding-status";
 
 const Consent = () => {
 	const navigate = useNavigate();
+	const { hasConsent, isLoading, error } = useOnboardingStatus();
 	const [biometricConsent, setBiometricConsent] = useState(false);
 	const [dataProcessingConsent, setDataProcessingConsent] = useState(false);
 	const [skipFacePhotos, setSkipFacePhotos] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+
+	// Redirect if consent already given
+	useEffect(() => {
+		if (!isLoading && hasConsent) {
+			const nextStep = getNextOnboardingStep({
+				hasConsent,
+				hasMeasurements: false,
+				hasFacePhotos: false,
+				hasBodyPhoto: false,
+				isLoading: false,
+				error: null,
+			});
+			if (nextStep) {
+				navigate(nextStep);
+			} else {
+				// All onboarding complete, go to dashboard
+				navigate("/dashboard");
+			}
+		}
+	}, [hasConsent, isLoading, navigate]);
+
+	// Show loading state while checking status
+	if (isLoading) {
+		return (
+			<div className="min-h-screen bg-gradient-subtle flex items-center justify-center p-6">
+				<Card className="max-w-md w-full shadow-premium border-border/50">
+					<CardContent className="p-8 text-center">
+						<div className="w-8 h-8 mx-auto mb-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+						<p className="text-muted-foreground">
+							Checking your setup...
+						</p>
+					</CardContent>
+				</Card>
+			</div>
+		);
+	}
+
+	// Show error state
+	if (error) {
+		return (
+			<div className="min-h-screen bg-gradient-subtle flex items-center justify-center p-6">
+				<Card className="max-w-md w-full shadow-premium border-border/50">
+					<CardContent className="p-8 text-center">
+						<p className="text-red-600 mb-4">{error}</p>
+						<Button onClick={() => window.location.reload()}>
+							Try Again
+						</Button>
+					</CardContent>
+				</Card>
+			</div>
+		);
+	}
 
 	const handleContinue = async () => {
 		if (!dataProcessingConsent) {
@@ -48,10 +105,17 @@ const Consent = () => {
 
 		setIsSubmitting(true);
 		try {
-			await api.submitConsent({
-				biometricData: biometricConsent,
-				dataProcessing: dataProcessingConsent,
-			});
+			// Save consent to localStorage
+			localStorage.setItem("user-consent", "true");
+			localStorage.setItem(
+				"biometric-consent",
+				biometricConsent.toString()
+			);
+			localStorage.setItem(
+				"data-processing-consent",
+				dataProcessingConsent.toString()
+			);
+			localStorage.setItem("skip-face-photos", skipFacePhotos.toString());
 
 			// Navigate based on user choice
 			if (skipFacePhotos) {
@@ -61,7 +125,7 @@ const Consent = () => {
 			}
 		} catch (error) {
 			toast.error("Error", {
-				description: "Failed to submit consent. Please try again.",
+				description: "Failed to save consent. Please try again.",
 			});
 		} finally {
 			setIsSubmitting(false);

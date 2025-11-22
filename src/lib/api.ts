@@ -588,10 +588,32 @@ export const api = {
 		return response.data;
 	},
 
-	// Delete user account
-	deleteUserAccount: async (): Promise<ApiResponse<void>> => {
-		const response = await apiClient.delete<ApiResponse<void>>("/users/me");
+	// Get user consent status
+	getUserConsent: async (): Promise<
+		ApiResponse<{ hasConsent: boolean; consent?: any }>
+	> => {
+		const response = await apiClient.get<
+			ApiResponse<{ hasConsent: boolean; consent?: any }>
+		>("/users/me/consent");
 		return response.data;
+	},
+
+	// Check if user has measurements
+	hasUserMeasurements: async (): Promise<
+		ApiResponse<{ hasMeasurements: boolean }>
+	> => {
+		try {
+			const response = await apiClient.get<ApiResponse<BodyMeasures>>(
+				"/users/me/measurements"
+			);
+			return { success: true, data: { hasMeasurements: true } };
+		} catch (error) {
+			// If 404, user doesn't have measurements
+			if (axios.isAxiosError(error) && error.response?.status === 404) {
+				return { success: true, data: { hasMeasurements: false } };
+			}
+			throw error;
+		}
 	},
 
 	// ==========================================

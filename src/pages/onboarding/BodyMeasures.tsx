@@ -9,11 +9,16 @@ import { Ruler, HelpCircle } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { usePhotoStore } from "@/lib/photoStore";
+import {
+	useOnboardingStatus,
+	getNextOnboardingStep,
+} from "@/hooks/use-onboarding-status";
 
 const BodyMeasures = () => {
 	const navigate = useNavigate();
 	const { setBodyMeasurements, bodyMeasurements: savedMeasurements } =
 		usePhotoStore();
+	const { hasMeasurements, isLoading, error } = useOnboardingStatus();
 	const [unit, setUnit] = useState<"cm" | "in">("cm");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [measures, setMeasures] = useState({
@@ -24,6 +29,26 @@ const BodyMeasures = () => {
 		shoulder: "",
 		inseam: "",
 	});
+
+	// Redirect if measurements already provided
+	useEffect(() => {
+		if (!isLoading && hasMeasurements) {
+			const nextStep = getNextOnboardingStep({
+				hasConsent: true,
+				hasMeasurements,
+				hasFacePhotos: false,
+				hasBodyPhoto: false,
+				isLoading: false,
+				error: null,
+			});
+			if (nextStep) {
+				navigate(nextStep);
+			} else {
+				// All onboarding complete, go to dashboard
+				navigate("/dashboard");
+			}
+		}
+	}, [hasMeasurements, isLoading, navigate]);
 
 	// Load saved measurements on component mount
 	useEffect(() => {
@@ -39,6 +64,38 @@ const BodyMeasures = () => {
 			setUnit(savedMeasurements.unit);
 		}
 	}, [savedMeasurements]);
+
+	// Show loading state while checking status
+	if (isLoading) {
+		return (
+			<div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+				<div className="container max-w-2xl mx-auto px-4 py-12">
+					<div className="text-center">
+						<div className="w-8 h-8 mx-auto mb-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+						<p className="text-muted-foreground">
+							Checking your measurements...
+						</p>
+					</div>
+				</div>
+			</div>
+		);
+	}
+
+	// Show error state
+	if (error) {
+		return (
+			<div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+				<div className="container max-w-2xl mx-auto px-4 py-12">
+					<div className="text-center">
+						<p className="text-red-600 mb-4">{error}</p>
+						<Button onClick={() => window.location.reload()}>
+							Try Again
+						</Button>
+					</div>
+				</div>
+			</div>
+		);
+	}
 
 	const handleInputChange = (field: string, value: string) => {
 		setMeasures((prev) => ({ ...prev, [field]: value }));

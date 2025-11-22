@@ -23,12 +23,17 @@ import {
 } from "lucide-react";
 import { usePhotoStore } from "@/lib/photoStore";
 import { useApiDataStore } from "@/lib/apiDataStore";
+import {
+	useOnboardingStatus,
+	getNextOnboardingStep,
+} from "@/hooks/use-onboarding-status";
 
 const Dashboard = () => {
 	const navigate = useNavigate();
 	const { generatedModels, uploadedModels, currentModel } = usePhotoStore();
 	const { userModels, loadUserModels, tryOnHistory, loadTryOnHistory } =
 		useApiDataStore();
+	const onboardingStatus = useOnboardingStatus();
 	const [recentActivity] = useState([
 		{ action: "Generated avatar", time: "2 hours ago", type: "generation" },
 		{ action: "Tried on Summer Casual", time: "1 day ago", type: "tryon" },
@@ -40,6 +45,11 @@ const Dashboard = () => {
 		loadUserModels();
 		loadTryOnHistory();
 	}, [loadUserModels, loadTryOnHistory]);
+
+	const navigateToOnboarding = () => {
+		const nextStep = getNextOnboardingStep(onboardingStatus);
+		navigate(nextStep);
+	};
 
 	const totalModels =
 		generatedModels.length + uploadedModels.length + userModels.length;
@@ -168,9 +178,7 @@ const Dashboard = () => {
 								<Button
 									variant="outline"
 									className="w-full"
-									onClick={() =>
-										navigate("/onboarding/consent")
-									}
+									onClick={navigateToOnboarding}
 								>
 									Start Generation
 								</Button>
