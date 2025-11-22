@@ -18,7 +18,6 @@ WORKDIR /usr/src/app
 ARG VITE_API_BASE_URL
 
 # Create .env file with build arguments
-'[p['
 RUN echo "VITE_API_BASE_URL=${VITE_API_BASE_URL}" > .env
 
 # Copy package files first for better caching
