@@ -90,11 +90,6 @@ const SignIn = () => {
 								/>
 							</div>
 
-							{error && (
-								<div className="text-sm text-red-500 bg-red-50 p-3 rounded-md border border-red-200">
-									{error}
-								</div>
-							)}
 							<Button
 								type="submit"
 								className="w-full transition-smooth shadow-elegant"

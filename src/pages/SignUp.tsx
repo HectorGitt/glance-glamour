@@ -149,12 +149,6 @@ const SignUp = () => {
 								/>
 							</div>
 
-							{error && (
-								<div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
-									{error}
-								</div>
-							)}
-
 							<Button
 								type="submit"
 								className="w-full transition-smooth shadow-elegant"
