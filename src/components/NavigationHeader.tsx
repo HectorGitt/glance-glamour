@@ -92,7 +92,7 @@ const NavigationHeader = () => {
 								<User className="w-5 h-5 text-primary-foreground" />
 							</div>
 							<span className="font-bold text-xl bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-								Avera
+								Averse
 							</span>
 						</Link>
 
