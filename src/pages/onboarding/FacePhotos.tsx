@@ -2,7 +2,13 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Camera, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+	Camera,
+	CheckCircle2,
+	AlertCircle,
+	Upload,
+	SkipForward,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { usePhotoStore, type PhotoAngle } from "@/lib/photoStore";
@@ -24,6 +30,7 @@ const FacePhotos = () => {
 	const videoRef = useRef<HTMLVideoElement>(null);
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const streamRef = useRef<MediaStream | null>(null);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	// Use Zustand store
 	const {
@@ -157,7 +164,8 @@ const FacePhotos = () => {
 	const handleCapture = async () => {
 		if (!stream || cameraError) {
 			toast.error("Camera not available", {
-				description: "Please check camera permissions and try again.",
+				description:
+					"Please check camera permissions or upload an image instead.",
 			});
 			return;
 		}
@@ -193,6 +201,68 @@ const FacePhotos = () => {
 		} finally {
 			setIsCapturing(false);
 		}
+	};
+
+	const handleFileUpload = async (
+		event: React.ChangeEvent<HTMLInputElement>
+	) => {
+		const file = event.target.files?.[0];
+		if (!file) return;
+
+		// Validate file type
+		if (!file.type.startsWith("image/")) {
+			toast.error("Invalid file type", {
+				description: "Please select an image file (PNG, JPG).",
+			});
+			return;
+		}
+
+		// Validate file size (max 10MB)
+		if (file.size > 10 * 1024 * 1024) {
+			toast.error("File too large", {
+				description: "Please select an image under 10MB.",
+			});
+			return;
+		}
+
+		setIsCapturing(true);
+		try {
+			// Store photo in Zustand store
+			addFacePhoto({
+				angle: currentAngle.angle,
+				blob: file,
+				quality: "good",
+			});
+
+			toast.success("Photo uploaded", {
+				description:
+					"Image uploaded successfully! Moving to next angle.",
+			});
+
+			// Update store step
+			setStoreStep(currentStep);
+			if (currentStep < PHOTO_STEPS.length - 1) {
+				setCurrentStep((prev) => prev + 1);
+			}
+		} catch (error) {
+			console.error("Upload error:", error);
+			toast.error("Upload failed", {
+				description: "Please try again.",
+			});
+		} finally {
+			setIsCapturing(false);
+			// Reset the input
+			event.target.value = "";
+		}
+	};
+
+	const handleSkip = () => {
+		// Set skip flag in localStorage
+		localStorage.setItem("skip-face-photos", "true");
+		toast.info("Face photos skipped", {
+			description: "You can always add photos later from your profile.",
+		});
+		navigate("/onboarding/body-measures");
 	};
 
 	const canProceed = () => {
@@ -305,19 +375,42 @@ const FacePhotos = () => {
 								)}
 							</h2>
 							<p className="text-muted-foreground">
-								Position your face in the frame and capture when
-								ready
+								Capture from camera or upload an image
 							</p>
 						</div>
 
-						<Button
-							size="lg"
-							onClick={handleCapture}
-							disabled={isCapturing || !stream || !!cameraError}
-							className="transition-smooth shadow-elegant hover:shadow-premium"
-						>
-							{isCapturing ? "Capturing..." : "Capture Photo"}
-						</Button>
+						<div className="flex flex-col sm:flex-row gap-3 justify-center">
+							<Button
+								size="lg"
+								onClick={handleCapture}
+								disabled={
+									isCapturing || !stream || !!cameraError
+								}
+								className="transition-smooth shadow-elegant hover:shadow-premium"
+							>
+								<Camera className="w-4 h-4 mr-2" />
+								{isCapturing ? "Capturing..." : "Capture Photo"}
+							</Button>
+
+							<Button
+								size="lg"
+								variant="outline"
+								onClick={() => fileInputRef.current?.click()}
+								disabled={isCapturing}
+								className="transition-smooth"
+							>
+								<Upload className="w-4 h-4 mr-2" />
+								Upload Image
+							</Button>
+
+							<input
+								ref={fileInputRef}
+								type="file"
+								accept="image/png,image/jpeg,image/jpg"
+								onChange={handleFileUpload}
+								className="hidden"
+							/>
+						</div>
 					</div>
 				</Card>
 
@@ -370,14 +463,25 @@ const FacePhotos = () => {
 						Back
 					</Button>
 
-					<Button
-						onClick={handleContinue}
-						disabled={!canProceed()}
-						size="lg"
-						className="transition-smooth shadow-elegant hover:shadow-premium"
-					>
-						Continue
-					</Button>
+					<div className="flex gap-3">
+						<Button
+							variant="ghost"
+							onClick={handleSkip}
+							className="text-muted-foreground hover:text-foreground"
+						>
+							<SkipForward className="w-4 h-4 mr-2" />
+							Skip for now
+						</Button>
+
+						<Button
+							onClick={handleContinue}
+							disabled={!canProceed()}
+							size="lg"
+							className="transition-smooth shadow-elegant hover:shadow-premium"
+						>
+							Continue
+						</Button>
+					</div>
 				</div>
 			</div>
 		</div>

@@ -11,6 +11,7 @@ import {
 	Trash2,
 	User,
 	Check,
+	X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -30,6 +31,13 @@ import {
 	getNextOnboardingStep,
 } from "@/hooks/use-onboarding-status";
 import { ModelViewer } from "@/components/ModelViewer";
+import { ModelPreviewModal } from "@/components/ModelPreviewModal";
+import {
+	Dialog,
+	DialogContent,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import type { GeneratedModel, UploadedModel } from "@/lib/photoStore";
 
 type LibraryModel = {
@@ -64,6 +72,16 @@ const TryOn = () => {
 	const [lastTryOnResult, setLastTryOnResult] = useState<TryOnResult | null>(
 		null
 	);
+	const [showResultModal, setShowResultModal] = useState(false);
+	const [resultModel, setResultModel] = useState<{
+		id: string;
+		url: string;
+		name: string;
+		type: "generated" | "uploaded";
+		generationType?: string;
+		hasTexture?: boolean;
+		timestamp?: number;
+	} | null>(null);
 
 	const navigateToOnboarding = () => {
 		const nextStep = getNextOnboardingStep({
@@ -366,9 +384,22 @@ const TryOn = () => {
 							setCurrentModel(newGeneratedModel);
 							generatedModelHandled = true;
 
+							// Set the result model and show the modal
+							setResultModel({
+								id: newGeneratedModel.id,
+								url: newGeneratedModel.url,
+								name: newGeneratedModel.name,
+								type: "generated",
+								generationType:
+									newGeneratedModel.generationType,
+								hasTexture: newGeneratedModel.hasTexture,
+								timestamp: newGeneratedModel.timestamp,
+							});
+							setShowResultModal(true);
+
 							toast.success("Virtual try-on completed!", {
 								description:
-									"Your personalized 3D model is ready! It's now active in your viewer.",
+									"Your personalized 3D model is ready! Click to view in full screen.",
 							});
 						} else if (result.generatedModelId) {
 							// Model was generated but details not included in response - fetch them
@@ -403,9 +434,22 @@ const TryOn = () => {
 								setCurrentModel(newGeneratedModel);
 								generatedModelHandled = true;
 
+								// Set the result model and show the modal
+								setResultModel({
+									id: newGeneratedModel.id,
+									url: newGeneratedModel.url,
+									name: newGeneratedModel.name,
+									type: "generated",
+									generationType:
+										newGeneratedModel.generationType,
+									hasTexture: newGeneratedModel.hasTexture,
+									timestamp: newGeneratedModel.timestamp,
+								});
+								setShowResultModal(true);
+
 								toast.success("Virtual try-on completed!", {
 									description:
-										"Your personalized 3D model is ready! It's now active in your viewer.",
+										"Your personalized 3D model is ready! Click to view in full screen.",
 								});
 							} catch (modelError) {
 								console.warn(
@@ -1323,6 +1367,81 @@ const TryOn = () => {
 					</div>
 				</div>
 			</div>
+
+			{/* Result Model Modal */}
+			<Dialog open={showResultModal} onOpenChange={setShowResultModal}>
+				<DialogContent className="max-w-6xl w-full h-[85vh] p-0">
+					<div className="flex flex-col h-full">
+						<DialogHeader className="px-6 py-4 border-b flex flex-row items-center justify-between">
+							<div className="flex items-center space-x-3">
+								<div className="p-2 rounded-lg bg-primary/10">
+									<Sparkles className="w-5 h-5 text-primary" />
+								</div>
+								<div>
+									<DialogTitle className="text-lg">
+										Try-On Result
+									</DialogTitle>
+									<p className="text-sm text-muted-foreground">
+										{resultModel?.name ||
+											"Your personalized 3D model"}
+									</p>
+								</div>
+							</div>
+							<Button
+								variant="ghost"
+								size="icon"
+								onClick={() => setShowResultModal(false)}
+								className="h-8 w-8"
+							>
+								<X className="h-4 w-4" />
+							</Button>
+						</DialogHeader>
+						<div className="flex-1 relative">
+							{resultModel?.url && (
+								<ModelViewer
+									modelUrl={resultModel.url}
+									status=""
+								/>
+							)}
+						</div>
+						<div className="px-6 py-4 border-t bg-muted/30">
+							<div className="flex items-center justify-between">
+								<div className="text-sm text-muted-foreground">
+									<span className="font-medium text-foreground">
+										{resultModel?.generationType ||
+											"Generated"}
+									</span>{" "}
+									•{" "}
+									{resultModel?.hasTexture
+										? "Mesh + Texture"
+										: "Mesh Only"}
+								</div>
+								<div className="flex gap-2">
+									<Button
+										variant="outline"
+										onClick={() =>
+											setShowResultModal(false)
+										}
+									>
+										Close
+									</Button>
+									<Button
+										onClick={() => {
+											setShowResultModal(false);
+											toast.success(
+												"Model is now active in viewer!"
+											);
+										}}
+									>
+										<Check className="w-4 h-4 mr-2" />
+										Use This Model
+									</Button>
+								</div>
+							</div>
+						</div>
+					</div>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 };

@@ -48,7 +48,12 @@ const Dashboard = () => {
 
 	const navigateToOnboarding = () => {
 		const nextStep = getNextOnboardingStep(onboardingStatus);
-		navigate(nextStep);
+		if (nextStep) {
+			navigate(nextStep);
+		} else {
+			// If all onboarding steps are complete, go to full body upload to generate a new avatar
+			navigate("/onboarding/full-body-upload");
+		}
 	};
 
 	const totalModels =
